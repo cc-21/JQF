@@ -29,11 +29,6 @@
  */
 package edu.berkeley.cs.jqf.fuzz;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.List;
-import java.util.Random;
-
 import com.pholser.junit.quickcheck.Property;
 import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.internal.generator.ServiceLoaderGeneratorSource;
@@ -48,6 +43,11 @@ import edu.berkeley.cs.jqf.fuzz.repro.ReproGuidance;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.Statement;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+import java.util.Random;
 
 /**
  * This class extends JUnit and Quickcheck runners to enable guided
@@ -138,6 +138,10 @@ public class JQF extends JUnitQuickcheck {
             }
         }
 
-        return new FuzzStatement(method, getTestClass(), generatorRepository, guidance);
+        try {
+            return new FuzzStatement(method, getTestClass(), generatorRepository, guidance);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
