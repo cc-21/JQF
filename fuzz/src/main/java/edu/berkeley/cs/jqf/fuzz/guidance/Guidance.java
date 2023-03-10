@@ -28,16 +28,16 @@
  */
 package edu.berkeley.cs.jqf.fuzz.guidance;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-
 import edu.berkeley.cs.jqf.fuzz.junit.TrialRunner;
 import edu.berkeley.cs.jqf.fuzz.junit.quickcheck.FuzzStatement;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.TestClass;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * A front-end for guided fuzzing.
@@ -222,4 +222,7 @@ public interface Guidance {
         new TrialRunner(testClass.getJavaClass(), method, args).run();
     }
 
+    default String getCoverageStr() {
+        return "";
+    }
 }

@@ -90,6 +90,7 @@ public class FuzzStatement extends Statement {
         IOUtils.createDirectory(outputDirectory);
         this.logFile = new File(outputDirectory, "mutation.log");
         logFile.delete();
+        infoLog("input; parent_input; exe_status; mutation_distance; coverage; parent_coverage");
     }
 
     /* Writes a line of text to a given log file. */
@@ -148,7 +149,7 @@ public class FuzzStatement extends Statement {
                 v1[j + 1] = min < substitutionCost ? min : substitutionCost;
             }
             // swap
-            int [] tmp = v0;
+            int[] tmp = v0;
             v0 = v1;
             v1 = tmp;
         }
@@ -162,7 +163,6 @@ public class FuzzStatement extends Statement {
      */
     @Override
     public void evaluate() throws Throwable {
-        infoLog("Mutation distance log begins...");
         // Construct generators for each parameter
         List<Generator<?>> generators = Arrays.stream(method.getMethod().getParameters())
                 .map(this::createParameterTypeContext)
@@ -175,6 +175,7 @@ public class FuzzStatement extends Statement {
             Object[] args = null;
             // parent input saved from last run
             Object[] parentArgs = null;
+            String parentCoverage = "";
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
                 Result result = INVALID;
@@ -242,20 +243,27 @@ public class FuzzStatement extends Statement {
 
                 // Inform guidance about the outcome of this trial
                 try {
-                    // store the initial parent args
-                    parentArgs = parentArgs == null ? args : parentArgs;
-                    // compute the levenshtein distance
-                    List<Integer> mutationDistances = getMutationDist(parentArgs, args);
-                    // log the results
-                    infoLog("Input(s): %s\n parent input(s): %s\n Levenshtein Distance: %s",
-                            Arrays.toString(args),
-                            Arrays.toString(parentArgs),
-                            mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")));
-                    infoLog("Result: %s\n Error msg: %s", result.toString(), error==null? "null": error.getClass().getSimpleName());
-                    // save current input as the parent input
-                    parentArgs = args;
                     // handle the results
                     guidance.handleResult(result, error);
+
+                    // store the initial parent args
+                    parentArgs = parentArgs == null ? args : parentArgs;
+                    // store the initial parent coverage
+                    String coverage = guidance.getCoverageStr();
+                    parentCoverage = parentCoverage == "" ? coverage : parentCoverage;
+
+                    // compute the levenshtein distance
+                    List<Integer> mutationDistances = getMutationDist(parentArgs, args);
+
+                    // note that for multi-args there is only one cov value
+                    infoLog("%s; %s; %s; %s; %s; %s", Arrays.toString(args),
+                            Arrays.toString(parentArgs), result,
+                            mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                            coverage, parentCoverage);
+
+                    // save current status as the parent status
+                    parentArgs = args;
+                    parentCoverage = coverage;
                 } catch (GuidanceException e) {
                     throw e; // Propagate
                 } catch (Throwable e) {

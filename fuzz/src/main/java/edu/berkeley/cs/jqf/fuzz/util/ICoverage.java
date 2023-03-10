@@ -57,4 +57,6 @@ public interface ICoverage<T extends Counter> {
     Counter getCounter();
 
     ICoverage<T> copy();
+
+    String getNonZeroCoverageStr();
 }

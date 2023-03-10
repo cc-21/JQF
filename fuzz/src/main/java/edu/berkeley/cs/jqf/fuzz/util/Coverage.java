@@ -28,11 +28,6 @@
  */
 package edu.berkeley.cs.jqf.fuzz.util;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.stream.Collectors;
-
 import edu.berkeley.cs.jqf.instrument.tracing.events.BranchEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.CallEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
@@ -40,6 +35,8 @@ import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEventVisitor;
 import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+
+import java.util.Arrays;
 
 /**
  * Utility class to collect branch and function coverage
@@ -69,6 +66,11 @@ public class Coverage implements TraceEventVisitor, ICoverage<Counter> {
             ret.counter.setAtIndex(idx, this.counter.getAtIndex(idx));
         }
         return ret;
+    }
+
+    @Override
+    public String getNonZeroCoverageStr() {
+        return counter.getNonZeroEntries().toString();
     }
 
     /**

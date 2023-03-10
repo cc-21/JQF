@@ -29,50 +29,25 @@
  */
 package edu.berkeley.cs.jqf.fuzz.ei;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.Console;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-
 import edu.berkeley.cs.jqf.fuzz.guidance.Guidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
 import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
-import edu.berkeley.cs.jqf.fuzz.util.Coverage;
-import edu.berkeley.cs.jqf.fuzz.util.CoverageFactory;
-import edu.berkeley.cs.jqf.fuzz.util.FastNonCollidingCoverage;
-import edu.berkeley.cs.jqf.fuzz.util.ICoverage;
-import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
+import edu.berkeley.cs.jqf.fuzz.util.*;
 import edu.berkeley.cs.jqf.instrument.tracing.FastCoverageSnoop;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
 import janala.instrument.FastCoverageListener;
 import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.impl.set.mutable.primitive.IntHashSet;
+
+import java.io.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static java.lang.Math.ceil;
 import static java.lang.Math.log;
@@ -1355,5 +1330,9 @@ public class ZestGuidance implements Guidance {
 
     }
 
-
+    // Do not use the existing toString method because we want a cleaner representation
+    @Override
+    public String getCoverageStr(){
+        return totalCoverage.getNonZeroCoverageStr();
+    }
 }

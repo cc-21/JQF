@@ -29,21 +29,6 @@
 
 package edu.berkeley.cs.jqf.fuzz.afl;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.Buffer;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.function.Consumer;
-
 import edu.berkeley.cs.jqf.fuzz.guidance.Guidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
@@ -52,6 +37,14 @@ import edu.berkeley.cs.jqf.fuzz.util.Hashing;
 import edu.berkeley.cs.jqf.instrument.tracing.events.BranchEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.CallEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
+
+import java.io.*;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.function.Consumer;
 
 
 /**
@@ -408,5 +401,8 @@ public class AFLGuidance implements Guidance {
         }
     }
 
-
+    @Override
+    public String getCoverageStr() {
+        return Arrays.toString(traceBits);
+    }
 }
