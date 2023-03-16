@@ -34,9 +34,13 @@ import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
 import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
 import edu.berkeley.cs.jqf.fuzz.util.Hashing;
+import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
 import edu.berkeley.cs.jqf.instrument.tracing.events.BranchEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.CallEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
+import org.eclipse.collections.api.list.primitive.IntList;
+import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 
 import java.io.*;
 import java.nio.Buffer;
@@ -61,6 +65,7 @@ import java.util.function.Consumer;
 public class AFLGuidance implements Guidance {
 
     /** The file in which AFL will write its input. */
+    private File logFile;
     protected File inputFile;
 
     /** The communication channel from AFL proxy to us. */
@@ -74,6 +79,7 @@ public class AFLGuidance implements Guidance {
 
     /** The "coverage" map that will be sent to AFL. */
     protected byte[] traceBits = new byte[COVERAGE_MAP_SIZE];
+    protected IntArrayList nonZeroIndices = new IntArrayList();
 
     /** Whether to keep executing more inputs. */
     protected boolean everything_ok = true;
@@ -233,6 +239,41 @@ public class AFLGuidance implements Guidance {
      * @param result    the result of the fuzzing trial
      * @param error     the exception thrown by the test, or <code>null</code>
      */
+
+    private void prepareOutputDirectory() throws IOException {
+        File outputDirectory = new File("mutation-data");
+        IOUtils.createDirectory(outputDirectory);
+        this.logFile = new File(outputDirectory, "mutation.log");
+        logFile.delete();
+        infoLog("input; parent_input; exe_status; mutation_distance; coverage; parent_coverage");
+    }
+
+    /* Writes a line of text to a given log file. */
+    private void appendLineToFile(File file, String line) throws GuidanceException {
+        try {
+            FileWriter fw = new FileWriter(file, true);
+            PrintWriter pw = new PrintWriter(fw);
+            PrintWriter out = pw;
+            out.println(line);
+            out.close();
+            pw.close();
+            fw.close();
+        } catch (IOException e) {
+            throw new GuidanceException(e);
+        }
+    }
+
+    /* Writes a line of text to the log file. */
+    private void infoLog(String str, Object... args) {
+        if (true) {
+            String line = String.format(str, args);
+            if (logFile != null) {
+                appendLineToFile(logFile, line);
+            } else {
+                System.err.println(line);
+            }
+        }
+    }
     @Override
     public void handleResult(Result result, Throwable error) {
         // Stop timeout handling
@@ -377,6 +418,7 @@ public class AFLGuidance implements Guidance {
      */
     protected void incrementTraceBits(int index) {
         traceBits[index]++;
+        nonZeroIndices.add(index);
     }
 
 
@@ -403,6 +445,20 @@ public class AFLGuidance implements Guidance {
 
     @Override
     public String getCoverageStr() {
-        return Arrays.toString(traceBits);
+
+        IntIntHashMap covMap = new IntIntHashMap();
+
+        /*
+        for(int i=0; i<this.nonZeroIndices.size(); i++) {
+            covMap.put(i, nonZeroIndices.get(i));
+        }
+        return covMap.toString();
+        */
+        for(int i=0; i<traceBits.length; i++) {
+            if(traceBits[i]!=0){
+                covMap.put(i, traceBits[i]);
+            }
+        }
+        return covMap.toString();
     }
 }

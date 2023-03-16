@@ -30,12 +30,12 @@ package edu.berkeley.cs.jqf.fuzz.guidance;
 
 import edu.berkeley.cs.jqf.fuzz.junit.TrialRunner;
 import edu.berkeley.cs.jqf.fuzz.junit.quickcheck.FuzzStatement;
+import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.TestClass;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -219,6 +219,7 @@ public interface Guidance {
      * @throws Throwable any exception that may be thrown during test execution
      */
     default void run(TestClass testClass, FrameworkMethod method, Object[] args) throws Throwable {
+
         new TrialRunner(testClass.getJavaClass(), method, args).run();
     }
 

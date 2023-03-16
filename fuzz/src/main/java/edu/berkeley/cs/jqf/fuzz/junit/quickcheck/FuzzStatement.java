@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 package edu.berkeley.cs.jqf.fuzz.junit.quickcheck;
-
 import com.pholser.junit.quickcheck.generator.GenerationStatus;
 import com.pholser.junit.quickcheck.generator.Generator;
 import com.pholser.junit.quickcheck.internal.ParameterTypeContext;
@@ -36,7 +35,9 @@ import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
 import edu.berkeley.cs.jqf.fuzz.guidance.*;
 import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
+import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
+import org.apache.commons.io.FileUtils;
 import org.junit.AssumptionViolatedException;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.MultipleFailureException;
@@ -47,6 +48,7 @@ import ru.vyarus.java.generics.resolver.context.MethodGenericsContext;
 
 import java.io.*;
 import java.lang.reflect.Parameter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -95,8 +97,14 @@ public class FuzzStatement extends Statement {
 
     /* Writes a line of text to a given log file. */
     protected void appendLineToFile(File file, String line) throws GuidanceException {
-        try (PrintWriter out = new PrintWriter(new FileWriter(file, true))) {
+        try {
+            FileWriter fw = new FileWriter(file, true);
+            PrintWriter pw = new PrintWriter(fw);
+            PrintWriter out = pw;
             out.println(line);
+            out.close();
+            pw.close();
+            fw.close();
         } catch (IOException e) {
             throw new GuidanceException(e);
         }
@@ -254,12 +262,13 @@ public class FuzzStatement extends Statement {
 
                     // compute the levenshtein distance
                     List<Integer> mutationDistances = getMutationDist(parentArgs, args);
-
-                    // note that for multi-args there is only one cov value
-                    infoLog("%s; %s; %s; %s; %s; %s", Arrays.toString(args),
-                            Arrays.toString(parentArgs), result,
-                            mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                            coverage, parentCoverage);
+                    if(!mutationDistances.contains(0)) {
+                        // note that for multi-args there is only one cov value
+                        infoLog("%s; %s; %s; %s; %s; %s", Arrays.toString(args),
+                                Arrays.toString(parentArgs), result,
+                                mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                coverage, parentCoverage);
+                    }
 
                     // save current status as the parent status
                     parentArgs = args;
