@@ -47,6 +47,7 @@ import ru.vyarus.java.generics.resolver.context.MethodGenericsContext;
 
 import java.io.*;
 import java.lang.reflect.Parameter;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -178,6 +179,7 @@ public class FuzzStatement extends Statement {
             String parentCoverage = "";
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
+                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 Result result = INVALID;
                 Throwable error = null;
 
@@ -256,10 +258,12 @@ public class FuzzStatement extends Statement {
                     List<Integer> mutationDistances = getMutationDist(parentArgs, args);
 
                     // note that for multi-args there is only one cov value
-                    infoLog("%s; %s; %s; %s; %s; %s", Arrays.toString(args),
-                            Arrays.toString(parentArgs), result,
+                    infoLog("%s; %s; %s; %s; %s",
+                            timestamp.toString(),
+                            Arrays.toString(args),
+                            result,
                             mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                            coverage, parentCoverage);
+                            coverage);
 
                     // save current status as the parent status
                     parentArgs = args;
