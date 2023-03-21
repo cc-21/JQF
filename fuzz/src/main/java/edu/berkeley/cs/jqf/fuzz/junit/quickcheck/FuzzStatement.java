@@ -91,7 +91,7 @@ public class FuzzStatement extends Statement {
         IOUtils.createDirectory(outputDirectory);
         this.logFile = new File(outputDirectory, "mutation.log");
         logFile.delete();
-        infoLog("input; parent_input; exe_status; mutation_distance; coverage; parent_coverage");
+        infoLog("timestamp~538 input~538 exe_status~538 mutation_distance~538 coverage");
     }
 
     /* Writes a line of text to a given log file. */
@@ -258,7 +258,7 @@ public class FuzzStatement extends Statement {
                     List<Integer> mutationDistances = getMutationDist(parentArgs, args);
 
                     // note that for multi-args there is only one cov value
-                    infoLog("%s; %s; %s; %s; %s",
+                    infoLog("%s~538 %s~538 %s~538 %s~538 %s",
                             timestamp.toString(),
                             Arrays.toString(args),
                             result,
