@@ -31,10 +31,13 @@ package edu.berkeley.cs.jqf.fuzz.junit.quickcheck;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 import com.pholser.junit.quickcheck.generator.GenerationStatus;
 import com.pholser.junit.quickcheck.generator.Generator;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
+import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
+import org.apache.commons.io.IOUtils;
 
 /**
  * Lazy provider of bytes from an input stream. This is useful
@@ -56,25 +59,6 @@ public class InputStreamGenerator extends Generator<InputStream> {
 
     @Override
     public InputStream generate(SourceOfRandomness sourceOfRandomness, GenerationStatus generationStatus) {
-        return new InputStream() {
-           @Override
-           public int read() throws IOException {
-               // Keep asking for new random bytes until the
-               // SourceOfRandomness runs out of parameters. This is designed
-               // to work with fixed-size parameter sequences, such as when
-               // fuzzing with AFL.
-               try {
-                   byte nextByte = sourceOfRandomness.nextByte(Byte.MIN_VALUE, Byte.MAX_VALUE);
-                   int nextInt = nextByte & 0xFF;
-                   return nextInt;
-               } catch (IllegalStateException e) {
-                   if (e.getCause() instanceof EOFException) {
-                       return -1;
-                   } else {
-                       throw e;
-                   }
-               }
-           }
-       };
+        return new InputStreamAFL(sourceOfRandomness);
     }
 }

@@ -29,24 +29,13 @@
  */
 package edu.berkeley.cs.jqf.fuzz.junit.quickcheck;
 
-import java.io.EOFException;
-import java.lang.reflect.Parameter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-
 import com.pholser.junit.quickcheck.generator.GenerationStatus;
 import com.pholser.junit.quickcheck.generator.Generator;
 import com.pholser.junit.quickcheck.internal.ParameterTypeContext;
 import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
-import edu.berkeley.cs.jqf.fuzz.guidance.Guidance;
-import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
-import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
-import edu.berkeley.cs.jqf.fuzz.guidance.Result;
-import edu.berkeley.cs.jqf.fuzz.guidance.StreamBackedRandom;
-import edu.berkeley.cs.jqf.fuzz.junit.TrialRunner;
+import edu.berkeley.cs.jqf.fuzz.guidance.*;
+import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
 import org.junit.AssumptionViolatedException;
 import org.junit.runners.model.FrameworkMethod;
@@ -56,10 +45,18 @@ import org.junit.runners.model.TestClass;
 import ru.vyarus.java.generics.resolver.GenericsResolver;
 import ru.vyarus.java.generics.resolver.context.MethodGenericsContext;
 
+import java.io.*;
+import java.lang.reflect.Parameter;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 import static edu.berkeley.cs.jqf.fuzz.guidance.Result.*;
 
 /**
- *
  * A JUnit {@link Statement} that will be run using guided fuzz
  * testing.
  *
@@ -74,9 +71,10 @@ public class FuzzStatement extends Statement {
     private final List<Throwable> failures = new ArrayList<>();
     private final Guidance guidance;
     private boolean skipExceptionSwallow;
+    private File logFile;
 
     public FuzzStatement(FrameworkMethod method, TestClass testClass,
-                         GeneratorRepository generatorRepository, Guidance fuzzGuidance) {
+                         GeneratorRepository generatorRepository, Guidance fuzzGuidance) throws IOException {
         this.method = method;
         this.testClass = testClass;
         this.generics = GenericsResolver.resolve(testClass.getJavaClass())
@@ -85,6 +83,78 @@ public class FuzzStatement extends Statement {
         this.expectedExceptions = Arrays.asList(method.getMethod().getExceptionTypes());
         this.guidance = fuzzGuidance;
         this.skipExceptionSwallow = Boolean.getBoolean("jqf.failOnDeclaredExceptions");
+        prepareOutputDirectory();
+    }
+
+    private void prepareOutputDirectory() throws IOException {
+        File outputDirectory = new File("mutation-data");
+        IOUtils.createDirectory(outputDirectory);
+        this.logFile = new File(outputDirectory, "mutation.log");
+        logFile.delete();
+        infoLog("timestamp~538 input~538 exe_status~538 mutation_distance~538 coverage");
+    }
+
+    /* Writes a line of text to a given log file. */
+    protected void appendLineToFile(File file, String line) throws GuidanceException {
+        try (PrintWriter out = new PrintWriter(new FileWriter(file, true))) {
+            out.println(line);
+        } catch (IOException e) {
+            throw new GuidanceException(e);
+        }
+    }
+
+    /* Writes a line of text to the log file. */
+    protected void infoLog(String str, Object... args) {
+        if (true) {
+            String line = String.format(str, args);
+            if (logFile != null) {
+                appendLineToFile(logFile, line);
+            } else {
+                System.err.println(line);
+            }
+        }
+    }
+
+    protected List<Integer> getMutationDist(Object[] parent, Object[] child) {
+        // should be the same length as the # of generators are the same
+        assert parent != null && child != null && parent.length == child.length;
+        return IntStream.range(0, parent.length)
+                .map(i -> getLevenshteinDist(parent[i].toString(), child[i].toString()))
+                .boxed()
+                .collect(Collectors.toList());
+    }
+
+    // optimized using two matrix rows
+    protected int getLevenshteinDist(String s1, String s2) {
+        if (s1.equals(s2)) {
+            return 0;
+        }
+        int n = s2.length();
+        int[] v0 = new int[n + 1];
+        int[] v1 = new int[n + 1];
+        for (int i = 0; i < s2.length() + 1; i++) {
+            v0[i] = i;
+        }
+        for (int i = 0; i < s1.length(); i++) {
+            v1[0] = i + 1;
+            for (int j = 0; j < s2.length(); j++) {
+                int deletionCost = v0[j + 1] + 1;
+                int insertionCost = v1[j] + 1;
+                int substitutionCost = 0;
+                if (s1.charAt(i) == s2.charAt(j)) {
+                    substitutionCost = v0[j];
+                } else {
+                    substitutionCost = v0[j] + 1;
+                }
+                int min = deletionCost < insertionCost ? deletionCost : insertionCost;
+                v1[j + 1] = min < substitutionCost ? min : substitutionCost;
+            }
+            // swap
+            int[] tmp = v0;
+            v0 = v1;
+            v1 = tmp;
+        }
+        return v0[n];
     }
 
     /**
@@ -102,17 +172,20 @@ public class FuzzStatement extends Statement {
 
         // Keep fuzzing until no more input or I/O error with guidance
         try {
-
+            // input generated
+            Object[] args = null;
+            // parent input saved from last run
+            Object[] parentArgs = null;
+            String parentCoverage = "";
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
+                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 Result result = INVALID;
                 Throwable error = null;
 
                 // Initialize guided fuzzing using a file-backed random number source
                 try {
-                    Object[] args;
                     try {
-
                         // Generate input values
                         StreamBackedRandom randomFile = new StreamBackedRandom(guidance.getInput(), Long.BYTES);
                         SourceOfRandomness random = new FastSourceOfRandomness(randomFile);
@@ -147,7 +220,7 @@ public class FuzzStatement extends Statement {
 
                     // If we reached here, then the trial must be a success
                     result = SUCCESS;
-                } catch(InstrumentationException e) {
+                } catch (InstrumentationException e) {
                     // Throw a guidance exception outside to stop fuzzing
                     throw new GuidanceException(e);
                 } catch (GuidanceException e) {
@@ -160,7 +233,6 @@ public class FuzzStatement extends Statement {
                     result = TIMEOUT;
                     error = e;
                 } catch (Throwable e) {
-
                     // Check if this exception was expected
                     if (isExceptionExpected(e.getClass())) {
                         result = SUCCESS; // Swallow the error
@@ -173,15 +245,35 @@ public class FuzzStatement extends Statement {
 
                 // Inform guidance about the outcome of this trial
                 try {
+                    // handle the results
                     guidance.handleResult(result, error);
+
+                    // store the initial parent args
+                    parentArgs = parentArgs == null ? args : parentArgs;
+                    // store the initial parent coverage
+                    String coverage = guidance.getCoverageStr();
+                    parentCoverage = parentCoverage == "" ? coverage : parentCoverage;
+
+                    // compute the levenshtein distance
+                    List<Integer> mutationDistances = getMutationDist(parentArgs, args);
+
+                    // note that for multi-args there is only one cov value
+                    infoLog("%s~538 %s~538 %s~538 %s~538 %s",
+                            timestamp.toString(),
+                            Arrays.toString(args),
+                            result,
+                            mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                            coverage);
+
+                    // save current status as the parent status
+                    parentArgs = args;
+                    parentCoverage = coverage;
                 } catch (GuidanceException e) {
                     throw e; // Propagate
                 } catch (Throwable e) {
                     // Anything else thrown from handleResult is an internal error, so wrap
                     throw new GuidanceException(e);
                 }
-
-
             }
         } catch (GuidanceException e) {
             System.err.println("Fuzzing stopped due to guidance exception: " + e.getMessage());

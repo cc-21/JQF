@@ -31,10 +31,7 @@ package edu.berkeley.cs.jqf.fuzz.util;
 import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 
 /**
  * An extension of {@link Counter} that caches which entries
@@ -54,6 +51,19 @@ public class NonZeroCachingCounter extends Counter {
         super(size);
         this.nonZeroCount = 0;
         this.nonZeroIndices = new IntArrayList();
+    }
+
+    @Override
+    public IntIntHashMap getNonZeroEntries() {
+        IntIntHashMap entries = new IntIntHashMap();
+        IntIterator iter = nonZeroIndices.intIterator();
+        while(iter.hasNext()){
+            int idx = iter.next();
+            int count = counts[idx];
+            assert (count != 0);
+            entries.put(idx, count);
+        }
+        return entries;
     }
 
     @Override
@@ -116,6 +126,4 @@ public class NonZeroCachingCounter extends Counter {
             nonZeroCount++;
         }
     }
-
-
 }

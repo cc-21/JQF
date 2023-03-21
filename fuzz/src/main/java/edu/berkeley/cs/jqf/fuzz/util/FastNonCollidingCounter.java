@@ -138,6 +138,11 @@ public class FastNonCollidingCounter extends Counter {
         return values;
     }
 
+    @Override
+    public IntIntHashMap getNonZeroEntries() {
+        return new IntIntHashMap(counts);
+    }
+
     /**
      * Retreives a value for a given key.
      *
