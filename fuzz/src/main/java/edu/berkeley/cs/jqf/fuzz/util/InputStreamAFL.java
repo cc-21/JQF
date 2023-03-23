@@ -6,6 +6,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -35,6 +36,10 @@ public class InputStreamAFL extends InputStream {
                 throw e;
             }
         }
+    }
+
+    public List<Integer> getAllBytes() {
+        return Collections.unmodifiableList(this.content);
     }
 
     @Override
