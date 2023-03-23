@@ -39,6 +39,7 @@ import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
 import janala.instrument.FastCoverageListener;
 import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.api.list.primitive.IntList;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 import org.eclipse.collections.impl.set.mutable.primitive.IntHashSet;
 
 import java.io.*;
@@ -1330,9 +1331,8 @@ public class ZestGuidance implements Guidance {
 
     }
 
-    // Do not use the existing toString method because we want a cleaner representation
     @Override
-    public String getCoverageStr(){
-        return totalCoverage.getNonZeroCoverageStr();
+    public IntIntHashMap getCoverageMap() {
+        return totalCoverage.getNonZeroCoverageMap();
     }
 }
