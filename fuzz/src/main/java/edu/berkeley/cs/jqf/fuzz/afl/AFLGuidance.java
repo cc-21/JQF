@@ -38,7 +38,6 @@ import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
 import edu.berkeley.cs.jqf.instrument.tracing.events.BranchEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.CallEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
-import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
 import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 
@@ -444,21 +443,13 @@ public class AFLGuidance implements Guidance {
     }
 
     @Override
-    public String getCoverageStr() {
-
+    public IntIntHashMap getCoverageMap() {
         IntIntHashMap covMap = new IntIntHashMap();
-
-        /*
-        for(int i=0; i<this.nonZeroIndices.size(); i++) {
-            covMap.put(i, nonZeroIndices.get(i));
-        }
-        return covMap.toString();
-        */
         for(int i=0; i<traceBits.length; i++) {
             if(traceBits[i]!=0){
                 covMap.put(i, traceBits[i]);
             }
         }
-        return covMap.toString();
+        return covMap;
     }
 }

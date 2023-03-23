@@ -35,19 +35,28 @@ import com.pholser.junit.quickcheck.internal.ParameterTypeContext;
 import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
 import edu.berkeley.cs.jqf.fuzz.guidance.*;
-import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 import org.junit.AssumptionViolatedException;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.MultipleFailureException;
 import org.junit.runners.model.Statement;
 import org.junit.runners.model.TestClass;
+import org.w3c.dom.Document;
 import ru.vyarus.java.generics.resolver.GenericsResolver;
 import ru.vyarus.java.generics.resolver.context.MethodGenericsContext;
 
-import java.io.*;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.StringWriter;
 import java.lang.reflect.Parameter;
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -71,7 +80,7 @@ public class FuzzStatement extends Statement {
     private final List<Throwable> failures = new ArrayList<>();
     private final Guidance guidance;
     private boolean skipExceptionSwallow;
-    private File logFile;
+    private static final Logger logger = LogManager.getLogger(FuzzStatement.class);
 
     public FuzzStatement(FrameworkMethod method, TestClass testClass,
                          GeneratorRepository generatorRepository, Guidance fuzzGuidance) throws IOException {
@@ -83,36 +92,6 @@ public class FuzzStatement extends Statement {
         this.expectedExceptions = Arrays.asList(method.getMethod().getExceptionTypes());
         this.guidance = fuzzGuidance;
         this.skipExceptionSwallow = Boolean.getBoolean("jqf.failOnDeclaredExceptions");
-        prepareOutputDirectory();
-    }
-
-    private void prepareOutputDirectory() throws IOException {
-        File outputDirectory = new File("mutation-data");
-        IOUtils.createDirectory(outputDirectory);
-        this.logFile = new File(outputDirectory, "mutation.log");
-        logFile.delete();
-        infoLog("timestamp~538 input~538 exe_status~538 mutation_distance~538 coverage");
-    }
-
-    /* Writes a line of text to a given log file. */
-    protected void appendLineToFile(File file, String line) throws GuidanceException {
-        try (PrintWriter out = new PrintWriter(new FileWriter(file, true))) {
-            out.println(line);
-        } catch (IOException e) {
-            throw new GuidanceException(e);
-        }
-    }
-
-    /* Writes a line of text to the log file. */
-    protected void infoLog(String str, Object... args) {
-        if (true) {
-            String line = String.format(str, args);
-            if (logFile != null) {
-                appendLineToFile(logFile, line);
-            } else {
-                System.err.println(line);
-            }
-        }
     }
 
     protected List<Integer> getMutationDist(Object[] parent, Object[] child) {
@@ -174,12 +153,12 @@ public class FuzzStatement extends Statement {
         try {
             // input generated
             Object[] args = null;
-            // parent input saved from last run
+            // parent status saved from last run
             Object[] parentArgs = null;
-            String parentCoverage = "";
+            IntIntHashMap parentCoverage = null;
+
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
-                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
                 Result result = INVALID;
                 Throwable error = null;
 
@@ -217,9 +196,9 @@ public class FuzzStatement extends Statement {
 
                     // Attempt to run the trial
                     guidance.run(testClass, method, args);
-
                     // If we reached here, then the trial must be a success
                     result = SUCCESS;
+
                 } catch (InstrumentationException e) {
                     // Throw a guidance exception outside to stop fuzzing
                     throw new GuidanceException(e);
@@ -248,26 +227,36 @@ public class FuzzStatement extends Statement {
                     // handle the results
                     guidance.handleResult(result, error);
 
-                    // store the initial parent args
-                    parentArgs = parentArgs == null ? args : parentArgs;
-                    // store the initial parent coverage
-                    String coverage = guidance.getCoverageStr();
-                    parentCoverage = parentCoverage == "" ? coverage : parentCoverage;
+                    // logging
+                    IntIntHashMap coverage = guidance.getCoverageMap();
+                    StringBuilder covStr = new StringBuilder("cov:");
+
+                    if (coverage.equals(parentCoverage)) {
+                        // same coverage
+                        covStr.append("s");
+                    } else {
+                        covStr.append(coverage);
+                    }
+                    // handle the special case of the input type: Document
+                    if (args[0] instanceof Document) {
+                        args = Arrays.stream(args).map(o -> documentToString((Document) o)).toArray();
+                    }
 
                     // compute the levenshtein distance
-                    List<Integer> mutationDistances = getMutationDist(parentArgs, args);
+                    List<Integer> mutationDistances = getMutationDist(parentArgs == null ? args : parentArgs, args);
 
-                    // note that for multi-args there is only one cov value
-                    infoLog("%s~538 %s~538 %s~538 %s~538 %s",
-                            timestamp.toString(),
+                    // note that there is only one cov value for multi-args
+                    String log = String.format("~fz %s~fz %s~fz %s~fz %s",
                             Arrays.toString(args),
                             result,
                             mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                            coverage);
+                            covStr);
+                    logger.error(log);
 
                     // save current status as the parent status
                     parentArgs = args;
                     parentCoverage = coverage;
+
                 } catch (GuidanceException e) {
                     throw e; // Propagate
                 } catch (Throwable e) {
@@ -289,7 +278,6 @@ public class FuzzStatement extends Statement {
                 throw new MultipleFailureException(failures);
             }
         }
-
     }
 
     /**
@@ -313,5 +301,18 @@ public class FuzzStatement extends Statement {
 
     private ParameterTypeContext createParameterTypeContext(Parameter parameter) {
         return ParameterTypeContext.forParameter(parameter, generics).annotate(parameter);
+    }
+
+    // a helper method to read the document
+    private static String documentToString(Document document) {
+        try {
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            Transformer transformer = transformerFactory.newTransformer();
+            StringWriter stream = new StringWriter();
+            transformer.transform(new DOMSource(document), new StreamResult(stream));
+            return stream.toString();
+        } catch (TransformerException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

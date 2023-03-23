@@ -14,3 +14,5 @@ apidocs/
 experiments/*-results-*
 *-results/
 .java-version
+*mutation-logs/
+*.class

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="warn" name="MyApp" packages="">
+    <Properties>
+        <Property name="LOG_DIR">./mutation-logs</Property>
+    </Properties>
+    <Appenders>
+        <RollingFile
+                name="rollingFile"
+                fileName="${LOG_DIR}/mutation.log"
+                filePattern="${LOG_DIR}/mutation.%i.log.gz"
+                ignoreExceptions="false">
+            <PatternLayout>
+                <Pattern>%d{ISO8601}%m%n</Pattern>
+            </PatternLayout>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="1GB" />
+            </Policies>
+            <DefaultRolloverStrategy max="10">
+                <!-- auto delete policy
+                <Delete basePath="${LOG_DIR}" maxDepth="2">
+                    <IfFileName glob="*/app-*.log.gz" />
+                    <IfLastModified age="P90D" />
+                </Delete>
+                -->
+            </DefaultRolloverStrategy>
+        </RollingFile>
+    </Appenders>
+    <Loggers>
+        <Root level="debug">
+            <AppenderRef ref="rollingFile"/>
+        </Root>
+    </Loggers>
+</Configuration>

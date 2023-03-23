@@ -1,6 +1,7 @@
 package edu.berkeley.cs.jqf.fuzz.util;
 
 import org.eclipse.collections.api.list.primitive.IntList;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 
 public interface ICoverage<T extends Counter> {
     /**
@@ -58,5 +59,5 @@ public interface ICoverage<T extends Counter> {
 
     ICoverage<T> copy();
 
-    String getNonZeroCoverageStr();
+    IntIntHashMap getNonZeroCoverageMap();
 }

@@ -33,6 +33,7 @@ import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.api.tuple.primitive.IntIntPair;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 
 import java.util.Iterator;
 
@@ -64,8 +65,8 @@ public class FastNonCollidingCoverage extends FastCoverageListener.Default imple
     }
 
     @Override
-    public String getNonZeroCoverageStr() {
-        return counter.getNonZeroEntries().toString();
+    public IntIntHashMap getNonZeroCoverageMap() {
+        return counter.getNonZeroEntries();
     }
 
     /**

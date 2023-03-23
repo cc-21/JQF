@@ -35,6 +35,7 @@ import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEventVisitor;
 import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.api.list.primitive.IntList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
 
 import java.util.Arrays;
 
@@ -69,8 +70,8 @@ public class Coverage implements TraceEventVisitor, ICoverage<Counter> {
     }
 
     @Override
-    public String getNonZeroCoverageStr() {
-        return counter.getNonZeroEntries().toString();
+    public IntIntHashMap getNonZeroCoverageMap() {
+        return counter.getNonZeroEntries();
     }
 
     /**
