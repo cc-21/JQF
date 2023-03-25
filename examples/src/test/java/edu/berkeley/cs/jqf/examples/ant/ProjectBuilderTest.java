@@ -28,20 +28,13 @@
  */
 package edu.berkeley.cs.jqf.examples.ant;
 
-import java.io.BufferedWriter;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import com.pholser.junit.quickcheck.From;
+import edu.berkeley.cs.jqf.examples.common.Dictionary;
 import edu.berkeley.cs.jqf.examples.xml.XMLDocumentUtils;
 import edu.berkeley.cs.jqf.examples.xml.XmlDocumentGenerator;
-import edu.berkeley.cs.jqf.examples.common.Dictionary;
 import edu.berkeley.cs.jqf.fuzz.Fuzz;
 import edu.berkeley.cs.jqf.fuzz.JQF;
+import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Project;
 import org.apache.tools.ant.helper.ProjectHelperImpl;
@@ -49,6 +42,10 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.w3c.dom.Document;
+
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @RunWith(JQF.class)
 public class ProjectBuilderTest {
@@ -69,11 +66,22 @@ public class ProjectBuilderTest {
         File buildXml = null;
         try {
             buildXml = serializeInputStream(in);
+
             ProjectHelperImpl p = new ProjectHelperImpl();
             p.parse(new Project(), buildXml);
         } catch (IOException e) {
             throw new RuntimeException(e);
         } catch (BuildException e) {
+            System.out.println(e.getLocalizedMessage());
+            if(e.getMessage().matches("(?i).*XML document structures.*")) {
+                throw new SyntaxException(e);
+            } else {
+                for(StackTraceElement elt: e.getStackTrace()) {
+                    if(elt.toString().matches("(?i).*XML document structures.*")) {
+                        throw new SyntaxException(e);
+                    }
+                }
+            }
             Assume.assumeNoException(e);
         } finally {
             if (buildXml != null) {
@@ -102,6 +110,10 @@ public class ProjectBuilderTest {
 
     @Test
     public void testSmall() throws BuildException {
-        testWithString("<project default='s' />");
+        //testWithString("<project default='s' />");
+        //testWithString("<dfss></dfss>");
+        //testWithString("<html ");
+        testWithString("dfg");
+        //testWithString("<project default='s' />");
     }
 }

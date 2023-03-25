@@ -29,16 +29,12 @@
 package edu.berkeley.cs.jqf.examples.rhino;
 
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-
 import com.pholser.junit.quickcheck.From;
 import edu.berkeley.cs.jqf.examples.common.AsciiStringGenerator;
 import edu.berkeley.cs.jqf.examples.js.JavaScriptCodeGenerator;
 import edu.berkeley.cs.jqf.fuzz.Fuzz;
 import edu.berkeley.cs.jqf.fuzz.JQF;
+import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import org.apache.commons.io.IOUtils;
 import org.junit.After;
 import org.junit.Assume;
@@ -48,6 +44,11 @@ import org.junit.runner.RunWith;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.EvaluatorException;
 import org.mozilla.javascript.Script;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 @RunWith(JQF.class)
 public class CompilerTest {
@@ -69,9 +70,13 @@ public class CompilerTest {
         try {
             Script script = context.compileString(input, "input", 0, null);
         } catch (EvaluatorException e) {
+            for(StackTraceElement elt: e.getStackTrace()) {
+                if(elt.toString().matches("(?i).*javascript.Parser.*")) {
+                    throw new SyntaxException(e);
+                }
+            }
             Assume.assumeNoException(e);
         }
-
     }
 
     @Fuzz
@@ -85,6 +90,7 @@ public class CompilerTest {
     public void smallTest() {
         testWithString("x = 3 + 4");
         testWithString("x <<= undefined");
+        testWithString("x 3 + 4");
     }
 
     @Fuzz

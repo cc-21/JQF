@@ -59,8 +59,10 @@ public enum Result {
      * guidance-specific. If a guidance does not set/throw
      * timeouts, then it need not handle this result type.
      */
-    TIMEOUT
+    TIMEOUT,
 
-
-
+    /**
+     * Syntax is invalid
+     */
+    SYNTAXINVALID
 }

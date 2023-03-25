@@ -37,6 +37,7 @@ import com.pholser.junit.quickcheck.random.SourceOfRandomness;
 import edu.berkeley.cs.jqf.fuzz.afl.AFLGuidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.*;
 import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
+import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -252,7 +253,11 @@ public class FuzzStatement extends Statement {
                 } catch (GuidanceException e) {
                     // Throw the guidance exception outside to stop fuzzing
                     throw e;
-                } catch (AssumptionViolatedException e) {
+                } catch(SyntaxException e) {
+                    result = SYNTAXINVALID;
+                    error = e;
+                }
+                catch (AssumptionViolatedException e) {
                     result = INVALID;
                     error = e;
                 } catch (TimeoutException e) {
