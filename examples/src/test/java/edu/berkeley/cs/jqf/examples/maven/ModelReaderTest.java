@@ -28,17 +28,14 @@
  */
 package edu.berkeley.cs.jqf.examples.maven;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-
 import com.pholser.junit.quickcheck.From;
 import com.pholser.junit.quickcheck.generator.Size;
+import edu.berkeley.cs.jqf.examples.common.Dictionary;
 import edu.berkeley.cs.jqf.examples.xml.XMLDocumentUtils;
 import edu.berkeley.cs.jqf.examples.xml.XmlDocumentGenerator;
-import edu.berkeley.cs.jqf.examples.common.Dictionary;
 import edu.berkeley.cs.jqf.fuzz.Fuzz;
 import edu.berkeley.cs.jqf.fuzz.JQF;
+import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.DefaultModelReader;
 import org.apache.maven.model.io.ModelReader;
@@ -47,6 +44,10 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.w3c.dom.Document;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 @RunWith(JQF.class)
 public class ModelReaderTest {
@@ -58,6 +59,11 @@ public class ModelReaderTest {
             Model model = reader.read(in, null);
             Assert.assertNotNull(model);
         } catch (IOException e) {
+            for(StackTraceElement elt: e.getStackTrace()) {
+                if(elt.toString().matches("(?i).*MXParser.*")) {
+                    throw new SyntaxException(e);
+                }
+            }
             Assume.assumeNoException(e);
         }
     }
@@ -84,7 +90,11 @@ public class ModelReaderTest {
 
     @Test
     public void testSmall() throws IOException {
+        // the first test case is counted as a failure input rather than invalid
         testWithString("<Y");
+        // semantic error
+        testWithString("<project default='s' />");
+        // syntactic error
+        testWithString("<project default='s' /");
     }
-
 }

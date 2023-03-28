@@ -34,7 +34,10 @@ import com.pholser.junit.quickcheck.generator.Generator;
 import com.pholser.junit.quickcheck.internal.ParameterTypeContext;
 import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
+import edu.berkeley.cs.jqf.fuzz.afl.AFLGuidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.*;
+import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
+import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -94,17 +97,62 @@ public class FuzzStatement extends Statement {
         this.skipExceptionSwallow = Boolean.getBoolean("jqf.failOnDeclaredExceptions");
     }
 
-    protected List<Integer> getMutationDist(Object[] parent, Object[] child) {
+    private List<Integer> getMutationDist(Object[] parent, Object[] child) {
         // should be the same length as the # of generators are the same
         assert parent != null && child != null && parent.length == child.length;
+        if (this.guidance instanceof AFLGuidance) {
+            // cannot run testWithGenerator methods with AFL
+            return IntStream.range(0, parent.length)
+                    .map(i ->
+                    {
+                        assert parent[i] instanceof InputStreamAFL && child[i] instanceof InputStreamAFL;
+                        return getLevenshteinDistFromInputstream((InputStreamAFL) parent[i], (InputStreamAFL)child[i]);
+                    })
+                    .boxed()
+                    .collect(Collectors.toList());
+        }
         return IntStream.range(0, parent.length)
                 .map(i -> getLevenshteinDist(parent[i].toString(), child[i].toString()))
                 .boxed()
                 .collect(Collectors.toList());
     }
 
+    private int getLevenshteinDistFromInputstream(InputStreamAFL in1, InputStreamAFL in2) {
+        List<Integer> s1 = in1.getAllBytes();
+        List<Integer> s2 = in2.getAllBytes();
+        if (s1.equals(s2)) {
+            return 0;
+        }
+        int n = s2.size();
+        int[] v0 = new int[n + 1];
+        int[] v1 = new int[n + 1];
+        for (int i = 0; i < s2.size() + 1; i++) {
+            v0[i] = i;
+        }
+        for (int i = 0; i < s1.size(); i++) {
+            v1[0] = i + 1;
+            for (int j = 0; j < s2.size(); j++) {
+                int deletionCost = v0[j + 1] + 1;
+                int insertionCost = v1[j] + 1;
+                int substitutionCost = 0;
+                if (s1.get(i) == s2.get(j)) {
+                    substitutionCost = v0[j];
+                } else {
+                    substitutionCost = v0[j] + 1;
+                }
+                int min = deletionCost < insertionCost ? deletionCost : insertionCost;
+                v1[j + 1] = min < substitutionCost ? min : substitutionCost;
+            }
+            // swap
+            int[] tmp = v0;
+            v0 = v1;
+            v1 = tmp;
+        }
+        return v0[n];
+    }
+
     // optimized using two matrix rows
-    protected int getLevenshteinDist(String s1, String s2) {
+    private int getLevenshteinDist(String s1, String s2) {
         if (s1.equals(s2)) {
             return 0;
         }
@@ -205,7 +253,11 @@ public class FuzzStatement extends Statement {
                 } catch (GuidanceException e) {
                     // Throw the guidance exception outside to stop fuzzing
                     throw e;
-                } catch (AssumptionViolatedException e) {
+                } catch(SyntaxException e) {
+                    result = SYNTAXINVALID;
+                    error = e;
+                }
+                catch (AssumptionViolatedException e) {
                     result = INVALID;
                     error = e;
                 } catch (TimeoutException e) {

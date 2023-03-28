@@ -28,28 +28,26 @@
  */
 package edu.berkeley.cs.jqf.examples.closure;
 
+import com.google.javascript.jscomp.Compiler;
+import com.google.javascript.jscomp.*;
+import com.pholser.junit.quickcheck.From;
+import edu.berkeley.cs.jqf.examples.common.AsciiStringGenerator;
+import edu.berkeley.cs.jqf.examples.js.JavaScriptCodeGenerator;
+import edu.berkeley.cs.jqf.fuzz.Fuzz;
+import edu.berkeley.cs.jqf.fuzz.JQF;
+import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
+import org.apache.commons.io.IOUtils;
+import org.junit.Assume;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.logging.LogManager;
-
-import com.google.javascript.jscomp.CompilationLevel;
-import com.google.javascript.jscomp.Compiler;
-import com.google.javascript.jscomp.CompilerOptions;
-import com.google.javascript.jscomp.Result;
-import com.google.javascript.jscomp.SourceFile;
-import com.pholser.junit.quickcheck.From;
-import edu.berkeley.cs.jqf.examples.common.AsciiStringGenerator;
-import edu.berkeley.cs.jqf.examples.js.JavaScriptCodeGenerator;
-import edu.berkeley.cs.jqf.fuzz.Fuzz;
-import edu.berkeley.cs.jqf.fuzz.JQF;
-import org.apache.commons.io.IOUtils;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
 
 @RunWith(JQF.class)
 public class CompilerTest {
@@ -75,6 +73,11 @@ public class CompilerTest {
 
     private void doCompile(SourceFile input) {
         Result result = compiler.compile(externs, input, options);
+        for(JSError e: result.errors) {
+            if(e.toString().matches(".*JSC_PARSE_ERROR.*")){
+                throw new SyntaxException(e.toString());
+            }
+        }
         Assume.assumeTrue(result.success);
     }
 
@@ -93,7 +96,8 @@ public class CompilerTest {
 
     @Test
     public void smallTest() {
-        debugWithString("x <<= Infinity");
+        //debugWithString("x <<= Infinity");
+        debugWithString("x <<= ?Infinity");
     }
 
     @Fuzz
