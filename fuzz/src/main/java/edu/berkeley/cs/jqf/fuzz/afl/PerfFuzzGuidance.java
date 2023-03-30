@@ -28,28 +28,18 @@
  */
 package edu.berkeley.cs.jqf.fuzz.afl;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
-import java.util.ArrayDeque;
-import java.util.Collection;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.Map;
-
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
 import edu.berkeley.cs.jqf.fuzz.util.Counter;
 import edu.berkeley.cs.jqf.fuzz.util.Hashing;
 import edu.berkeley.cs.jqf.fuzz.util.MapOfCounters;
-import edu.berkeley.cs.jqf.instrument.tracing.events.AllocEvent;
-import edu.berkeley.cs.jqf.instrument.tracing.events.BranchEvent;
-import edu.berkeley.cs.jqf.instrument.tracing.events.CallEvent;
-import edu.berkeley.cs.jqf.instrument.tracing.events.ReadEvent;
-import edu.berkeley.cs.jqf.instrument.tracing.events.ReturnEvent;
-import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
+import edu.berkeley.cs.jqf.instrument.tracing.events.*;
 import org.eclipse.collections.api.list.primitive.IntList;
+
+import java.io.*;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * A front-end that uses AFL for increasing performance counters
@@ -205,9 +195,9 @@ public class PerfFuzzGuidance extends AFLGuidance {
 
 
     @Override
-    public void handleResult(Result result, Throwable error) {
+    public void handleResult(Result result, Throwable error, Object[] inputValue) {
         // First, communicate the coverage information as usual
-        super.handleResult(result, error);
+        super.handleResult(result, error, inputValue);
 
         // Wait for calling context to be empty
         // (i.e. all AECs are processed)

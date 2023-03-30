@@ -167,7 +167,7 @@ public interface Guidance {
      * @throws GuidanceException if there was an I/O or other error
      *                  in handling the result
      */
-    void handleResult(Result result, Throwable error) throws GuidanceException;
+    void handleResult(Result result, Throwable error, Object[] inputValue) throws GuidanceException;
 
     /**
      * Returns a callback generator for a thread's event trace.

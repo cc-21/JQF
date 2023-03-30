@@ -28,12 +28,10 @@
  */
 package edu.berkeley.cs.jqf.fuzz.guidance;
 
-import java.util.function.Consumer;
-
-import edu.berkeley.cs.jqf.fuzz.random.NoGuidance;
 import edu.berkeley.cs.jqf.fuzz.Fuzz;
-import edu.berkeley.cs.jqf.fuzz.junit.GuidedFuzzing;
 import edu.berkeley.cs.jqf.fuzz.JQF;
+import edu.berkeley.cs.jqf.fuzz.junit.GuidedFuzzing;
+import edu.berkeley.cs.jqf.fuzz.random.NoGuidance;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -45,6 +43,8 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
+
+import java.util.function.Consumer;
 
 @RunWith(MockitoJUnitRunner.class)
 public class GuidanceTest {
@@ -92,7 +92,10 @@ public class GuidanceTest {
     @Test
     public void testSuccess() {
         GuidedFuzzing.run(GuidanceTestFuzzer.class, "success", guidance, null);
-        Mockito.verify(guidance).handleResult(Result.SUCCESS, null);
+        Mockito.verify(guidance).handleResult(
+                ArgumentMatchers.eq(Result.SUCCESS),
+                ArgumentMatchers.isNull(),
+                ArgumentMatchers.any());
     }
 
     @Test
@@ -100,7 +103,8 @@ public class GuidanceTest {
         GuidedFuzzing.run(GuidanceTestFuzzer.class, "assumptionViolated", guidance, null);
         Mockito.verify(guidance).handleResult(
                 ArgumentMatchers.eq(Result.INVALID),
-                ArgumentMatchers.isA(AssumptionViolatedException.class));
+                ArgumentMatchers.isA(AssumptionViolatedException.class),
+                ArgumentMatchers.any());
     }
 
     @Test
@@ -108,7 +112,8 @@ public class GuidanceTest {
         GuidedFuzzing.run(GuidanceTestFuzzer.class, "uncaughtException", guidance, null);
         Mockito.verify(guidance).handleResult(
                 ArgumentMatchers.eq(Result.FAILURE),
-                ArgumentMatchers.isA(RuntimeException.class));
+                ArgumentMatchers.isA(RuntimeException.class),
+                ArgumentMatchers.any());
     }
 
 
@@ -117,21 +122,26 @@ public class GuidanceTest {
         GuidedFuzzing.run(GuidanceTestFuzzer.class, "assertionFailure", guidance, null);
         Mockito.verify(guidance).handleResult(
                 ArgumentMatchers.eq(Result.FAILURE),
-                ArgumentMatchers.isA(AssertionError.class));
+                ArgumentMatchers.isA(AssertionError.class),
+                ArgumentMatchers.any());
     }
 
     @Test
     public void testExpectedException() {
         GuidedFuzzing.run(GuidanceTestFuzzer.class, "expectedException", guidance, null);
-        Mockito.verify(guidance).handleResult(Result.SUCCESS, null);
+        Mockito.verify(guidance).handleResult(
+                ArgumentMatchers.eq(Result.SUCCESS),
+                ArgumentMatchers.isNull(),
+                ArgumentMatchers.any());
     }
 
     @Test
     public void testTimeout() {
-        GuidedFuzzing.run(GuidanceTestFuzzer.class, "timeout", guidance, null);
+        GuidedFuzzing.run(GuidanceTestFuzzer.class, "timeout", guidance, ArgumentMatchers.any());
         Mockito.verify(guidance).handleResult(
                 ArgumentMatchers.eq(Result.TIMEOUT),
-                ArgumentMatchers.isA(RuntimeException.class));
+                ArgumentMatchers.isA(RuntimeException.class),
+                ArgumentMatchers.any());
     }
 
 }

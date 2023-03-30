@@ -28,21 +28,14 @@
  */
 package edu.berkeley.cs.jqf.fuzz.repro;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
-import java.util.function.Consumer;
-
 import edu.berkeley.cs.jqf.fuzz.guidance.Guidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
 import edu.berkeley.cs.jqf.fuzz.util.Coverage;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
+
+import java.io.*;
+import java.util.function.Consumer;
 
 /**
  * @author Rohan Padhye
@@ -93,7 +86,7 @@ public class ReproServerGuidance implements Guidance {
     }
 
     @Override
-    public void handleResult(Result result, Throwable error){
+    public void handleResult(Result result, Throwable error, Object[] inputValue){
         // Close the open input file
         try {
             if (inputFileStream != null) {

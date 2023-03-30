@@ -29,24 +29,6 @@
  */
 package edu.berkeley.cs.jqf.fuzz.repro;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintStream;
-import java.io.PrintWriter;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.function.Consumer;
-
 import edu.berkeley.cs.jqf.fuzz.guidance.Guidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
@@ -60,6 +42,11 @@ import org.jacoco.core.analysis.CoverageBuilder;
 import org.jacoco.core.tools.ExecFileLoader;
 import org.jacoco.report.IReportVisitor;
 import org.jacoco.report.csv.CSVFormatter;
+
+import java.io.*;
+import java.lang.reflect.Method;
+import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * A front-end that provides a specified set of inputs for test
@@ -220,7 +207,7 @@ public class ReproGuidance implements Guidance {
      * @param error    the error thrown during the trial, or <code>null</code>
      */
     @Override
-    public void handleResult(Result result, Throwable error) {
+    public void handleResult(Result result, Throwable error, Object[] inputValue) {
         // Close the open input file
         try {
             if (inputStream != null) {

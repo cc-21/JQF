@@ -35,6 +35,7 @@ import com.pholser.junit.quickcheck.internal.ParameterTypeContext;
 import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
 import edu.berkeley.cs.jqf.fuzz.afl.AFLGuidance;
+import edu.berkeley.cs.jqf.fuzz.ei.ZestGuidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.*;
 import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
 import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
@@ -197,6 +198,7 @@ public class FuzzStatement extends Statement {
                 .map(generatorRepository::produceGenerator)
                 .collect(Collectors.toList());
 
+
         // Keep fuzzing until no more input or I/O error with guidance
         try {
             // input generated
@@ -204,6 +206,8 @@ public class FuzzStatement extends Statement {
             // parent status saved from last run
             Object[] parentArgs = null;
             IntIntHashMap parentCoverage = null;
+            List<Integer> parentIdx = new ArrayList<>();
+            parentIdx.add(-1);
 
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
@@ -277,33 +281,52 @@ public class FuzzStatement extends Statement {
                 // Inform guidance about the outcome of this trial
                 try {
                     // handle the results
-                    guidance.handleResult(result, error);
+                    guidance.handleResult(result, error, args);
+                    IntIntHashMap coverage = guidance.getCoverageMap();
 
                     // logging
-                    IntIntHashMap coverage = guidance.getCoverageMap();
-                    StringBuilder covStr = new StringBuilder("cov:");
+                    int currentParentIdx = -1;
+                    if(guidance instanceof ZestGuidance) {
+                        ZestGuidance zest = (ZestGuidance)guidance;
+                        parentArgs = zest.getCurrentParentInput();
+                        parentCoverage = zest.getCurrentParentInputCoverage();
+                        currentParentIdx = zest.getCurrentParentInputIdx();
+                    }
 
-                    if (coverage.equals(parentCoverage)) {
+                    StringBuilder covStr = new StringBuilder("cov:");
+                    // handle the special case of the input type: Document
+                    if (coverage.equals(parentCoverage) && parentIdx.contains(currentParentIdx)) {
                         // same coverage
                         covStr.append("s");
                     } else {
                         covStr.append(coverage);
                     }
-                    // handle the special case of the input type: Document
+                    // compute the levenshtein distance
                     if (args[0] instanceof Document) {
                         args = Arrays.stream(args).map(o -> documentToString((Document) o)).toArray();
+                        parentArgs = Arrays.stream(parentArgs).map(o -> documentToString((Document) o)).toArray();
                     }
-
-                    // compute the levenshtein distance
                     List<Integer> mutationDistances = getMutationDist(parentArgs == null ? args : parentArgs, args);
 
                     // note that there is only one cov value for multi-args
-                    String log = String.format("~fz %s~fz %s~fz %s~fz %s",
-                            Arrays.toString(args),
-                            result,
-                            mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                            covStr);
-                    logger.error(log);
+                    if (currentParentIdx != -1) {
+                        String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s",
+                                currentParentIdx,
+                                parentIdx.contains(currentParentIdx)?"same":Arrays.toString(parentArgs),
+                                Arrays.toString(args),
+                                result,
+                                mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                covStr);
+                        logger.error(log);
+                        parentIdx.add(currentParentIdx);
+                    } else {
+                        String log = String.format("~fz %s~fz %s~fz %s~fz %s",
+                                Arrays.toString(args),
+                                result,
+                                mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                covStr);
+                        logger.error(log);
+                    }
 
                     // save current status as the parent status
                     parentArgs = args;
