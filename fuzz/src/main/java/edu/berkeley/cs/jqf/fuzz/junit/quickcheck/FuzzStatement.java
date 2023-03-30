@@ -64,6 +64,9 @@ import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -198,14 +201,15 @@ public class FuzzStatement extends Statement {
                 .map(generatorRepository::produceGenerator)
                 .collect(Collectors.toList());
 
+        ExecutorService executor = Executors.newFixedThreadPool(10);
 
         // Keep fuzzing until no more input or I/O error with guidance
         try {
             // input generated
-            Object[] args = null;
+            final Object[][] args = {null};
             // parent status saved from last run
-            Object[] parentArgs = null;
-            IntIntHashMap parentCoverage = null;
+            final Object[][] parentArgs = {null};
+            final IntIntHashMap[] parentCoverage = {null};
             List<Integer> parentIdx = new ArrayList<>();
             parentIdx.add(-1);
 
@@ -221,12 +225,12 @@ public class FuzzStatement extends Statement {
                         StreamBackedRandom randomFile = new StreamBackedRandom(guidance.getInput(), Long.BYTES);
                         SourceOfRandomness random = new FastSourceOfRandomness(randomFile);
                         GenerationStatus genStatus = new NonTrackingGenerationStatus(random);
-                        args = generators.stream()
+                        args[0] = generators.stream()
                                 .map(g -> g.generate(random, genStatus))
                                 .toArray();
 
                         // Let guidance observe the generated input args
-                        guidance.observeGeneratedArgs(args);
+                        guidance.observeGeneratedArgs(args[0]);
                     } catch (IllegalStateException e) {
                         if (e.getCause() instanceof EOFException) {
                             // This happens when we reach EOF before reading all the random values.
@@ -247,7 +251,7 @@ public class FuzzStatement extends Statement {
                     }
 
                     // Attempt to run the trial
-                    guidance.run(testClass, method, args);
+                    guidance.run(testClass, method, args[0]);
                     // If we reached here, then the trial must be a success
                     result = SUCCESS;
 
@@ -281,56 +285,65 @@ public class FuzzStatement extends Statement {
                 // Inform guidance about the outcome of this trial
                 try {
                     // handle the results
-                    guidance.handleResult(result, error, args);
+                    guidance.handleResult(result, error, args[0]);
                     IntIntHashMap coverage = guidance.getCoverageMap();
 
                     // logging
-                    int currentParentIdx = -1;
-                    if(guidance instanceof ZestGuidance) {
-                        ZestGuidance zest = (ZestGuidance)guidance;
-                        parentArgs = zest.getCurrentParentInput();
-                        parentCoverage = zest.getCurrentParentInputCoverage();
-                        currentParentIdx = zest.getCurrentParentInputIdx();
-                    }
+                    Result finalResult = result;
+                    Runnable run = new Runnable() {
+                        @Override
+                        public void run() {
+                            int currentParentIdx = -1;
+                            if(guidance instanceof ZestGuidance) {
+                                ZestGuidance zest = (ZestGuidance)guidance;
+                                parentArgs[0] = zest.getCurrentParentInput();
+                                parentCoverage[0] = zest.getCurrentParentInputCoverage();
+                                currentParentIdx = zest.getCurrentParentInputIdx();
+                            }
 
-                    StringBuilder covStr = new StringBuilder("cov:");
-                    // handle the special case of the input type: Document
-                    if (coverage.equals(parentCoverage) && parentIdx.contains(currentParentIdx)) {
-                        // same coverage
-                        covStr.append("s");
-                    } else {
-                        covStr.append(coverage);
-                    }
-                    // compute the levenshtein distance
-                    if (args[0] instanceof Document) {
-                        args = Arrays.stream(args).map(o -> documentToString((Document) o)).toArray();
-                        parentArgs = Arrays.stream(parentArgs).map(o -> documentToString((Document) o)).toArray();
-                    }
-                    List<Integer> mutationDistances = getMutationDist(parentArgs == null ? args : parentArgs, args);
+                            StringBuilder covStr = new StringBuilder("cov:");
+                            // handle the special case of the input type: Document
+                            if (coverage.equals(parentCoverage[0]) && parentIdx.contains(currentParentIdx)) {
+                                // same coverage
+                                covStr.append("s");
+                            } else {
+                                covStr.append(coverage);
+                            }
+                            // compute the levenshtein distance
+                            if (args[0][0] instanceof Document) {
+                                args[0] = Arrays.stream(args[0]).map(o -> documentToString((Document) o)).toArray();
+                            }
+                            if (parentArgs[0][0] instanceof Document) {
+                                parentArgs[0] = Arrays.stream(parentArgs[0]).map(o -> documentToString((Document) o)).toArray();
+                            }
+                            List<Integer> mutationDistances = getMutationDist(parentArgs[0] == null ? args[0] : parentArgs[0], args[0]);
 
-                    // note that there is only one cov value for multi-args
-                    if (currentParentIdx != -1) {
-                        String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s",
-                                currentParentIdx,
-                                parentIdx.contains(currentParentIdx)?"same":Arrays.toString(parentArgs),
-                                Arrays.toString(args),
-                                result,
-                                mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                                covStr);
-                        logger.error(log);
-                        parentIdx.add(currentParentIdx);
-                    } else {
-                        String log = String.format("~fz %s~fz %s~fz %s~fz %s",
-                                Arrays.toString(args),
-                                result,
-                                mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                                covStr);
-                        logger.error(log);
-                    }
+                            // note that there is only one cov value for multi-args
+                            if (currentParentIdx != -1) {
+                                String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s",
+                                        currentParentIdx,
+                                        parentIdx.contains(currentParentIdx)?"same":Arrays.toString(parentArgs[0]),
+                                        Arrays.toString(args[0]),
+                                        finalResult,
+                                        mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                        covStr);
+                                logger.error(log);
+                                parentIdx.add(currentParentIdx);
+                            } else {
+                                String log = String.format("~fz %s~fz %s~fz %s~fz %s",
+                                        Arrays.toString(args[0]),
+                                        finalResult,
+                                        mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                        covStr);
+                                logger.error(log);
+                            }
+                        }
+                    };
+                    executor.execute(run);
 
                     // save current status as the parent status
-                    parentArgs = args;
-                    parentCoverage = coverage;
+                    parentArgs[0] = args[0];
+                    parentCoverage[0] = coverage;
 
                 } catch (GuidanceException e) {
                     throw e; // Propagate
@@ -343,6 +356,8 @@ public class FuzzStatement extends Statement {
             System.err.println("Fuzzing stopped due to guidance exception: " + e.getMessage());
             throw e;
         }
+        executor.shutdown();
+        executor.awaitTermination(6, TimeUnit.HOURS);
 
         if (failures.size() > 0) {
             if (failures.size() == 1) {
