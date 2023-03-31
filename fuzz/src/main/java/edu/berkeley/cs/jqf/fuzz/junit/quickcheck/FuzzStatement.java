@@ -110,7 +110,7 @@ public class FuzzStatement extends Statement {
                     .map(i ->
                     {
                         assert parent[i] instanceof InputStreamAFL && child[i] instanceof InputStreamAFL;
-                        return getLevenshteinDistFromInputstream((InputStreamAFL) parent[i], (InputStreamAFL)child[i]);
+                        return getLevenshteinDistFromInputstream((InputStreamAFL) parent[i], (InputStreamAFL) child[i]);
                     })
                     .boxed()
                     .collect(Collectors.toList());
@@ -211,7 +211,6 @@ public class FuzzStatement extends Statement {
             final Object[][] parentArgs = {null};
             final IntIntHashMap[] parentCoverage = {null};
             List<Integer> parentIdx = new ArrayList<>();
-            parentIdx.add(-1);
 
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
@@ -261,11 +260,10 @@ public class FuzzStatement extends Statement {
                 } catch (GuidanceException e) {
                     // Throw the guidance exception outside to stop fuzzing
                     throw e;
-                } catch(SyntaxException e) {
+                } catch (SyntaxException e) {
                     result = SYNTAXINVALID;
                     error = e;
-                }
-                catch (AssumptionViolatedException e) {
+                } catch (AssumptionViolatedException e) {
                     result = INVALID;
                     error = e;
                 } catch (TimeoutException e) {
@@ -294,38 +292,48 @@ public class FuzzStatement extends Statement {
                         @Override
                         public void run() {
                             int currentParentIdx = -1;
-                            if(guidance instanceof ZestGuidance) {
-                                ZestGuidance zest = (ZestGuidance)guidance;
+                            StringBuilder parentArgsStr = new StringBuilder();
+                            StringBuilder parentCoverageStr = new StringBuilder();
+                            StringBuilder covStr = new StringBuilder("c:");
+
+                            if (guidance instanceof ZestGuidance) {
+                                ZestGuidance zest = (ZestGuidance) guidance;
                                 parentArgs[0] = zest.getCurrentParentInput();
                                 parentCoverage[0] = zest.getCurrentParentInputCoverage();
                                 currentParentIdx = zest.getCurrentParentInputIdx();
+
+                                if (parentArgs[0][0] instanceof Document) {
+                                    parentArgs[0] = Arrays.stream(parentArgs[0]).map(o -> documentToString((Document) o)).toArray();
+                                }
+                                if (parentIdx.contains(currentParentIdx)) {
+                                    parentArgsStr.append("s");
+                                    parentCoverageStr.append("s");
+                                } else {
+                                    parentArgsStr.append(Arrays.toString(parentArgs[0]));
+                                    parentCoverageStr.append(parentCoverage[0].toString());
+                                }
                             }
 
-                            StringBuilder covStr = new StringBuilder("cov:");
-                            // handle the special case of the input type: Document
-                            if (coverage.equals(parentCoverage[0]) && parentIdx.contains(currentParentIdx)) {
-                                // same coverage
+                            if (parentIdx.contains(currentParentIdx) && coverage.equals(parentCoverage[0])) {
                                 covStr.append("s");
                             } else {
                                 covStr.append(coverage);
                             }
-                            // compute the levenshtein distance
+                            // handle the special case of Document
                             if (args[0][0] instanceof Document) {
                                 args[0] = Arrays.stream(args[0]).map(o -> documentToString((Document) o)).toArray();
                             }
-                            if (parentArgs[0][0] instanceof Document) {
-                                parentArgs[0] = Arrays.stream(parentArgs[0]).map(o -> documentToString((Document) o)).toArray();
-                            }
+                            // compute the levenshtein distance
                             List<Integer> mutationDistances = getMutationDist(parentArgs[0] == null ? args[0] : parentArgs[0], args[0]);
 
-                            // note that there is only one cov value for multi-args
                             if (currentParentIdx != -1) {
-                                String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s",
+                                String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s",
                                         currentParentIdx,
-                                        parentIdx.contains(currentParentIdx)?"same":Arrays.toString(parentArgs[0]),
+                                        parentArgsStr,
                                         Arrays.toString(args[0]),
                                         finalResult,
                                         mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                        parentCoverageStr,
                                         covStr);
                                 logger.error(log);
                                 parentIdx.add(currentParentIdx);
@@ -339,6 +347,7 @@ public class FuzzStatement extends Statement {
                             }
                         }
                     };
+
                     executor.execute(run);
 
                     // save current status as the parent status
