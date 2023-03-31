@@ -338,6 +338,7 @@ public class FuzzStatement extends Statement {
                                 logger.error(log);
                                 parentIdx.add(currentParentIdx);
                             } else {
+                                // TODO: fix AFL logging - concurrency issues
                                 String log = String.format("~fz %s~fz %s~fz %s~fz %s",
                                         Arrays.toString(args[0]),
                                         finalResult,
