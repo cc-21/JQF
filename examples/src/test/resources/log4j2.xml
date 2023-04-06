@@ -15,7 +15,7 @@
             <Policies>
                 <SizeBasedTriggeringPolicy size="1GB" />
             </Policies>
-            <DefaultRolloverStrategy max="20">
+            <DefaultRolloverStrategy max="80">
                 <!-- auto delete policy
                 <Delete basePath="${LOG_DIR}" maxDepth="2">
                     <IfFileName glob="*/app-*.log.gz" />

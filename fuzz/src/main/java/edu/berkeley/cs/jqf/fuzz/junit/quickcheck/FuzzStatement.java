@@ -34,9 +34,10 @@ import com.pholser.junit.quickcheck.generator.Generator;
 import com.pholser.junit.quickcheck.internal.ParameterTypeContext;
 import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
-import edu.berkeley.cs.jqf.fuzz.afl.AFLGuidance;
+import edu.berkeley.cs.jqf.fuzz.ei.ExecutionIndexingGuidance;
 import edu.berkeley.cs.jqf.fuzz.ei.ZestGuidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.*;
+import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
 import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
 import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
@@ -63,10 +64,13 @@ import java.io.StringWriter;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.logging.FileHandler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.SimpleFormatter;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -87,7 +91,6 @@ public class FuzzStatement extends Statement {
     private final List<Throwable> failures = new ArrayList<>();
     private final Guidance guidance;
     private boolean skipExceptionSwallow;
-    private static final Logger logger = LogManager.getLogger(FuzzStatement.class);
 
     public FuzzStatement(FrameworkMethod method, TestClass testClass,
                          GeneratorRepository generatorRepository, Guidance fuzzGuidance) throws IOException {
@@ -101,29 +104,43 @@ public class FuzzStatement extends Statement {
         this.skipExceptionSwallow = Boolean.getBoolean("jqf.failOnDeclaredExceptions");
     }
 
-    private List<Integer> getMutationDist(Object[] parent, Object[] child) {
-        // should be the same length as the # of generators are the same
-        assert parent != null && child != null && parent.length == child.length;
-        if (this.guidance instanceof AFLGuidance) {
-            // cannot run testWithGenerator methods with AFL
-            return IntStream.range(0, parent.length)
-                    .map(i ->
-                    {
-                        assert parent[i] instanceof InputStreamAFL && child[i] instanceof InputStreamAFL;
-                        return getLevenshteinDistFromInputstream((InputStreamAFL) parent[i], (InputStreamAFL) child[i]);
-                    })
+    /**
+     * @param parent Notnull
+     * @param child  Notnull
+     * @return
+     */
+    private List<Integer> getAFLMutationDist(Object[] parent, Object[] child) {
+        // cannot run testWithGenerator methods with AFL
+        if (parent == null) {
+            return IntStream.range(0, child.length)
+                    .map(i -> getLevenshteinDistFromInputStream(Arrays.asList(0),
+                            ((InputStreamAFL) child[i]).getAllBytes()))
+                    .boxed()
+                    .collect(Collectors.toList());
+        } else {
+            return IntStream.range(0, child.length)
+                    .map(i -> getLevenshteinDistFromInputStream(((InputStreamAFL) parent[i]).getAllBytes(),
+                            ((InputStreamAFL) child[i]).getAllBytes()))
                     .boxed()
                     .collect(Collectors.toList());
         }
-        return IntStream.range(0, parent.length)
-                .map(i -> getLevenshteinDist(parent[i].toString(), child[i].toString()))
+    }
+
+    /**
+     * Requires the parent and child to have the same lengths
+     *
+     * @param parent Notnull
+     * @param child  Notnull
+     * @return
+     */
+    private List<Integer> getZestMutationDist(Object[] parent, Object[] child) {
+        return IntStream.range(0, child.length)
+                .map(i -> getLevenshteinDistFromString(parent[i].toString(), child[i].toString()))
                 .boxed()
                 .collect(Collectors.toList());
     }
 
-    private int getLevenshteinDistFromInputstream(InputStreamAFL in1, InputStreamAFL in2) {
-        List<Integer> s1 = in1.getAllBytes();
-        List<Integer> s2 = in2.getAllBytes();
+    private int getLevenshteinDistFromInputStream(List<Integer> s1, List<Integer> s2) {
         if (s1.equals(s2)) {
             return 0;
         }
@@ -156,7 +173,7 @@ public class FuzzStatement extends Statement {
     }
 
     // optimized using two matrix rows
-    private int getLevenshteinDist(String s1, String s2) {
+    private int getLevenshteinDistFromString(String s1, String s2) {
         if (s1.equals(s2)) {
             return 0;
         }
@@ -188,29 +205,38 @@ public class FuzzStatement extends Statement {
         return v0[n];
     }
 
-    /**
-     * Run the test.
-     *
-     * @throws Throwable if the test fails
-     */
-    @Override
-    public void evaluate() throws Throwable {
+    private void evaluateZest() throws Throwable {
+        // log4j logger
+        Logger logger = LogManager.getLogger(FuzzStatement.class);
+        int nThreads = Runtime.getRuntime().availableProcessors();
+        BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(100);
+        ExecutorService executor = new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, workQueue, new RejectedExecutionHandler() {
+            @Override
+            public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+                try {
+                    executor.getQueue().put(r);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                // check afterwards and throw if pool shutdown
+                if (executor.isShutdown()) {
+                    throw new RejectedExecutionException();
+                }
+            }
+        });
+        ZestGuidance zest = (ZestGuidance) guidance;
+
         // Construct generators for each parameter
         List<Generator<?>> generators = Arrays.stream(method.getMethod().getParameters())
                 .map(this::createParameterTypeContext)
                 .map(generatorRepository::produceGenerator)
                 .collect(Collectors.toList());
 
-        ExecutorService executor = Executors.newFixedThreadPool(10);
-
         // Keep fuzzing until no more input or I/O error with guidance
         try {
             // input generated
             final Object[][] args = {null};
-            // parent status saved from last run
-            final Object[][] parentArgs = {null};
-            final IntIntHashMap[] parentCoverage = {null};
-            List<Integer> parentIdx = new ArrayList<>();
+            List<Integer> prevParents = new ArrayList<>();
 
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
@@ -284,76 +310,63 @@ public class FuzzStatement extends Statement {
                 try {
                     // handle the results
                     guidance.handleResult(result, error, args[0]);
-                    IntIntHashMap coverage = guidance.getCoverageMap();
 
-                    // logging
-                    Result finalResult = result;
+                    // logging starts
+                    // Variable 'result' is accessed from within inner class, needs to be final or effectively final
+                    String resultStr = result.toString();
                     Runnable run = new Runnable() {
                         @Override
                         public void run() {
-                            int currentParentIdx = -1;
+                            // log data
                             StringBuilder parentArgsStr = new StringBuilder();
                             StringBuilder parentCoverageStr = new StringBuilder();
-                            StringBuilder covStr = new StringBuilder("c:");
+                            StringBuilder covStr = new StringBuilder();
 
-                            if (guidance instanceof ZestGuidance) {
-                                ZestGuidance zest = (ZestGuidance) guidance;
-                                parentArgs[0] = zest.getCurrentParentInput();
-                                parentCoverage[0] = zest.getCurrentParentInputCoverage();
-                                currentParentIdx = zest.getCurrentParentInputIdx();
+                            Object[] parentArgs = zest.getCurrentParentInput();
+                            IntIntHashMap coverage = guidance.getCoverageMap();
+                            IntIntHashMap parentCoverage = zest.getCurrentParentInputCoverage();
+                            int parentIdx = zest.getCurrentParentInputIdx();
 
-                                if (parentArgs[0][0] instanceof Document) {
-                                    parentArgs[0] = Arrays.stream(parentArgs[0]).map(o -> documentToString((Document) o)).toArray();
-                                }
-                                if (parentIdx.contains(currentParentIdx)) {
-                                    parentArgsStr.append("s");
-                                    parentCoverageStr.append("s");
-                                } else {
-                                    parentArgsStr.append(Arrays.toString(parentArgs[0]));
-                                    parentCoverageStr.append(parentCoverage[0].toString());
-                                }
-                            }
-
-                            if (parentIdx.contains(currentParentIdx) && coverage.equals(parentCoverage[0])) {
-                                covStr.append("s");
+                            // string representations of inputs
+                            args[0] = convertInputToString(args[0]);
+                            if (parentArgs == null) {
+                                parentArgs = new String[args[0].length];
+                                Arrays.fill(parentArgs, "");
                             } else {
-                                covStr.append(coverage);
-                            }
-                            // handle the special case of Document
-                            if (args[0][0] instanceof Document) {
-                                args[0] = Arrays.stream(args[0]).map(o -> documentToString((Document) o)).toArray();
+                                parentArgs = convertInputToString(parentArgs);
                             }
                             // compute the levenshtein distance
-                            List<Integer> mutationDistances = getMutationDist(parentArgs[0] == null ? args[0] : parentArgs[0], args[0]);
+                            List<Integer> mutationDistances = getZestMutationDist(parentArgs, args[0]);
 
-                            if (currentParentIdx != -1) {
-                                String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s",
-                                        currentParentIdx,
-                                        parentArgsStr,
-                                        Arrays.toString(args[0]),
-                                        finalResult,
-                                        mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                                        parentCoverageStr,
-                                        covStr);
-                                logger.error(log);
-                                parentIdx.add(currentParentIdx);
+                            // check redundant logs
+                            if (prevParents.contains(parentIdx)) {
+                                if (coverage.equals(parentCoverage)) {
+                                    covStr.append("s");
+                                } else {
+                                    covStr.append(coverage);
+                                }
+                                parentArgsStr.append("s");
+                                parentCoverageStr.append("s");
                             } else {
-                                // TODO: fix AFL logging - concurrency issues
-                                String log = String.format("~fz %s~fz %s~fz %s~fz %s",
-                                        Arrays.toString(args[0]),
-                                        finalResult,
-                                        mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                                        covStr);
-                                logger.error(log);
+                                covStr.append(coverage);
+                                parentArgsStr.append(Arrays.toString(parentArgs));
+                                parentCoverageStr.append(parentCoverage);
                             }
+
+                            String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s~fz",
+                                    parentIdx,
+                                    parentArgsStr,
+                                    Arrays.toString(args[0]),
+                                    resultStr,
+                                    mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                    parentCoverageStr,
+                                    covStr);
+                            logger.error(log);
+                            // update
+                            prevParents.add(parentIdx);
                         }
                     };
-
                     executor.execute(run);
-
-                    // save current status as the parent status
-                    parentArgs[0] = args[0];
-                    parentCoverage[0] = coverage;
 
                 } catch (GuidanceException e) {
                     throw e; // Propagate
@@ -366,8 +379,10 @@ public class FuzzStatement extends Statement {
             System.err.println("Fuzzing stopped due to guidance exception: " + e.getMessage());
             throw e;
         }
+
+        // shut down the executor
         executor.shutdown();
-        executor.awaitTermination(6, TimeUnit.HOURS);
+        executor.awaitTermination(5, TimeUnit.HOURS);
 
         if (failures.size() > 0) {
             if (failures.size() == 1) {
@@ -378,6 +393,312 @@ public class FuzzStatement extends Statement {
                 throw new MultipleFailureException(failures);
             }
         }
+    }
+
+    private void evaluateEI() throws Throwable {
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(FuzzStatement.class.getName());
+        FileHandler handler = new FileHandler("mutation.%g.log", 1000000000, 80, true);
+        handler.setFormatter(new SimpleFormatter() {
+            private static final String format = "%1$tFT%1$tT,%1$tL%2$s%n";
+            @Override
+            public synchronized String format(LogRecord lr) {
+                return String.format(format,
+                        new Date(lr.getMillis()),
+                        lr.getMessage()
+                );
+            }
+        });
+        logger.setUseParentHandlers(false);
+        logger.addHandler(handler);
+
+        ExecutionIndexingGuidance ei = (ExecutionIndexingGuidance) guidance;
+
+        // Construct generators for each parameter
+        List<Generator<?>> generators = Arrays.stream(method.getMethod().getParameters())
+                .map(this::createParameterTypeContext)
+                .map(generatorRepository::produceGenerator)
+                .collect(Collectors.toList());
+
+        // Keep fuzzing until no more input or I/O error with guidance
+        try {
+            // input generated
+            final Object[][] args = {null};
+            List<Integer> prevParents = new ArrayList<>();
+
+            // Keep fuzzing as long as guidance wants to
+            while (guidance.hasInput()) {
+                Result result = INVALID;
+                Throwable error = null;
+
+                // Initialize guided fuzzing using a file-backed random number source
+                try {
+                    try {
+                        // Generate input values
+                        StreamBackedRandom randomFile = new StreamBackedRandom(guidance.getInput(), Long.BYTES);
+                        SourceOfRandomness random = new FastSourceOfRandomness(randomFile);
+                        GenerationStatus genStatus = new NonTrackingGenerationStatus(random);
+                        args[0] = generators.stream()
+                                .map(g -> g.generate(random, genStatus))
+                                .toArray();
+
+                        // Let guidance observe the generated input args
+                        guidance.observeGeneratedArgs(args[0]);
+                    } catch (IllegalStateException e) {
+                        if (e.getCause() instanceof EOFException) {
+                            // This happens when we reach EOF before reading all the random values.
+                            // The only thing we can do is try again
+                            continue;
+                        } else {
+                            throw e;
+                        }
+                    } catch (AssumptionViolatedException | TimeoutException e) {
+                        // Propagate early termination of tests from generator
+                        continue;
+                    } catch (GuidanceException e) {
+                        // Throw the guidance exception outside to stop fuzzing
+                        throw e;
+                    } catch (Throwable e) {
+                        // Throw the guidance exception outside to stop fuzzing
+                        throw new GuidanceException(e);
+                    }
+
+                    // Attempt to run the trial
+                    guidance.run(testClass, method, args[0]);
+                    // If we reached here, then the trial must be a success
+                    result = SUCCESS;
+
+                } catch (InstrumentationException e) {
+                    // Throw a guidance exception outside to stop fuzzing
+                    throw new GuidanceException(e);
+                } catch (GuidanceException e) {
+                    // Throw the guidance exception outside to stop fuzzing
+                    throw e;
+                } catch (SyntaxException e) {
+                    result = SYNTAXINVALID;
+                    error = e;
+                } catch (AssumptionViolatedException e) {
+                    result = INVALID;
+                    error = e;
+                } catch (TimeoutException e) {
+                    result = TIMEOUT;
+                    error = e;
+                } catch (Throwable e) {
+                    // Check if this exception was expected
+                    if (isExceptionExpected(e.getClass())) {
+                        result = SUCCESS; // Swallow the error
+                    } else {
+                        result = FAILURE;
+                        error = e;
+                        failures.add(e);
+                    }
+                }
+
+                // Inform guidance about the outcome of this trial
+                try {
+                    // handle the results
+                    guidance.handleResult(result, error, args[0]);
+
+                    // logging starts
+                    // Variable 'result' is accessed from within inner class, needs to be final or effectively final
+                    String resultStr = result.toString();
+
+                    // log data
+                    StringBuilder parentArgsStr = new StringBuilder();
+                    StringBuilder parentCoverageStr = new StringBuilder();
+                    StringBuilder covStr = new StringBuilder();
+
+                    Object[] parentArgs = ei.getCurrentParentInput();
+                    IntIntHashMap coverage = guidance.getCoverageMap();
+                    IntIntHashMap parentCoverage = ei.getCurrentParentInputCoverage();
+                    int parentIdx = ei.getCurrentParentInputIdx();
+
+                    // string representations of inputs
+                    args[0] = convertInputToString(args[0]);
+                    if (parentArgs == null) {
+                        parentArgs = new String[args[0].length];
+                        Arrays.fill(parentArgs, "");
+                    } else {
+                        parentArgs = convertInputToString(parentArgs);
+                    }
+                    // compute the levenshtein distance
+                    List<Integer> mutationDistances = getZestMutationDist(parentArgs, args[0]);
+
+                    // check redundant logs
+                    if (prevParents.contains(parentIdx)) {
+                        if (coverage.equals(parentCoverage)) {
+                            covStr.append("s");
+                        } else {
+                            covStr.append(coverage);
+                        }
+                        parentCoverageStr.append("s");
+                    } else {
+                        covStr.append(coverage);
+                        parentCoverageStr.append(parentCoverage);
+                    }
+                    parentArgsStr.append(Arrays.toString(parentArgs));
+
+                    String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s~fz",
+                            parentIdx,
+                            parentArgsStr,
+                            Arrays.toString(args[0]),
+                            resultStr,
+                            mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                            parentCoverageStr,
+                            covStr);
+                    logger.log(Level.INFO, log);
+                    // update
+                    prevParents.add(parentIdx);
+                } catch (GuidanceException e) {
+                    throw e; // Propagate
+                } catch (Throwable e) {
+                    // Anything else thrown from handleResult is an internal error, so wrap
+                    throw new GuidanceException(e);
+                }
+            }
+        } catch (GuidanceException e) {
+            System.err.println("Fuzzing stopped due to guidance exception: " + e.getMessage());
+            throw e;
+        }
+
+        if (failures.size() > 0) {
+            if (failures.size() == 1) {
+                throw failures.get(0);
+            } else {
+                // Not sure if we should report each failing run,
+                // as there may be duplicates
+                throw new MultipleFailureException(failures);
+            }
+        }
+    }
+
+    private void evaluateOthers() throws Throwable {
+        // Construct generators for each parameter
+        List<Generator<?>> generators = Arrays.stream(method.getMethod().getParameters())
+                .map(this::createParameterTypeContext)
+                .map(generatorRepository::produceGenerator)
+                .collect(Collectors.toList());
+
+        // Keep fuzzing until no more input or I/O error with guidance
+        try {
+            Object[] args = null;
+            // Keep fuzzing as long as guidance wants to
+            while (guidance.hasInput()) {
+                Result result = INVALID;
+                Throwable error = null;
+                // Initialize guided fuzzing using a file-backed random number source
+                try {
+                    try {
+
+                        // Generate input values
+                        StreamBackedRandom randomFile = new StreamBackedRandom(guidance.getInput(), Long.BYTES);
+                        SourceOfRandomness random = new FastSourceOfRandomness(randomFile);
+                        GenerationStatus genStatus = new NonTrackingGenerationStatus(random);
+                        args = generators.stream()
+                                .map(g -> g.generate(random, genStatus))
+                                .toArray();
+
+                        // Let guidance observe the generated input args
+                        guidance.observeGeneratedArgs(args);
+                    } catch (IllegalStateException e) {
+                        if (e.getCause() instanceof EOFException) {
+                            // This happens when we reach EOF before reading all the random values.
+                            // The only thing we can do is try again
+                            continue;
+                        } else {
+                            throw e;
+                        }
+                    } catch (AssumptionViolatedException | TimeoutException e) {
+                        // Propagate early termination of tests from generator
+                        continue;
+                    } catch (GuidanceException e) {
+                        // Throw the guidance exception outside to stop fuzzing
+                        throw e;
+                    } catch (Throwable e) {
+                        // Throw the guidance exception outside to stop fuzzing
+                        throw new GuidanceException(e);
+                    }
+
+                    // Attempt to run the trial
+                    guidance.run(testClass, method, args);
+
+                    // If we reached here, then the trial must be a success
+                    result = SUCCESS;
+                } catch (InstrumentationException e) {
+                    // Throw a guidance exception outside to stop fuzzing
+                    throw new GuidanceException(e);
+                } catch (GuidanceException e) {
+                    // Throw the guidance exception outside to stop fuzzing
+                    throw e;
+                } catch (AssumptionViolatedException e) {
+                    result = INVALID;
+                    error = e;
+                } catch (TimeoutException e) {
+                    result = TIMEOUT;
+                    error = e;
+                } catch (Throwable e) {
+
+                    // Check if this exception was expected
+                    if (isExceptionExpected(e.getClass())) {
+                        result = SUCCESS; // Swallow the error
+                    } else {
+                        result = FAILURE;
+                        error = e;
+                        failures.add(e);
+                    }
+                }
+
+                // Inform guidance about the outcome of this trial
+                try {
+                    guidance.handleResult(result, error, args);
+                } catch (GuidanceException e) {
+                    throw e; // Propagate
+                } catch (Throwable e) {
+                    // Anything else thrown from handleResult is an internal error, so wrap
+                    throw new GuidanceException(e);
+                }
+
+
+            }
+        } catch (GuidanceException e) {
+            System.err.println("Fuzzing stopped due to guidance exception: " + e.getMessage());
+            throw e;
+        }
+
+        if (failures.size() > 0) {
+            if (failures.size() == 1) {
+                throw failures.get(0);
+            } else {
+                // Not sure if we should report each failing run,
+                // as there may be duplicates
+                throw new MultipleFailureException(failures);
+            }
+        }
+    }
+
+    /**
+     * Run the test.
+     *
+     * @throws Throwable if the test fails
+     */
+    @Override
+    public void evaluate() throws Throwable {
+        if (guidance.getClass() == ZestGuidance.class) {
+            evaluateZest();
+        } else if (guidance.getClass() == ExecutionIndexingGuidance.class) {
+            evaluateEI();
+        } else {
+            evaluateOthers();
+        }
+    }
+
+    /**
+     * @param args Notnull
+     */
+    private Object[] convertInputToString(Object[] args) {
+        if (args[0] instanceof Document) {
+            return Arrays.stream(args).map(o -> documentToString((Document) o)).toArray();
+        }
+        return args;
     }
 
     /**

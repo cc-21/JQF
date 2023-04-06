@@ -629,8 +629,7 @@ public class ZestGuidance implements Guidance {
 
     public IntIntHashMap getCurrentParentInputCoverage() {
         ICoverage cov = this.savedInputs.get(this.currentParentInputIdx).totalCoverage;
-        assert cov != null;
-        return cov.getNonZeroCoverageMap();
+        return cov==null? new IntIntHashMap() : cov.getNonZeroCoverageMap();
     }
 
     @Override
@@ -720,6 +719,10 @@ public class ZestGuidance implements Guidance {
             this.numTrials++;
 
             boolean valid = result == Result.SUCCESS;
+
+            // save bookkeeping data
+            currentInput.value = inputValue;
+            currentInput.totalCoverage = totalCoverage.copy();
 
             if (valid) {
                 // Increment valid counter
@@ -958,8 +961,6 @@ public class ZestGuidance implements Guidance {
         savedInputs.add(currentInput);
 
         // Third, store basic book-keeping data
-        currentInput.value = inputValue;
-        currentInput.totalCoverage = totalCoverage.copy();
         currentInput.id = newInputIdx;
         currentInput.saveFile = saveFile;
         currentInput.coverage = runCoverage.copy();
