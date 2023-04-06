@@ -134,9 +134,9 @@ public class FuzzStatement extends Statement {
      * @param child  Notnull
      * @return
      */
-    private List<Integer> getZestMutationDist(Object[] parent, Object[] child) {
+    private List<Integer> getZestMutationDist(String[] parent, String[] child) {
         return IntStream.range(0, child.length)
-                .map(i -> getLevenshteinDistFromString(parent[i].toString(), child[i].toString()))
+                .map(i -> getLevenshteinDistFromString(parent[i], child[i]))
                 .boxed()
                 .collect(Collectors.toList());
     }
@@ -310,8 +310,8 @@ public class FuzzStatement extends Statement {
                 // Inform guidance about the outcome of this trial
                 try {
                     // handle the results
-                    args[0] = convertInputToString(args[0]);
-                    guidance.handleResult(result, error, args[0]);
+                    String[] childStrings = convertInputToString(args[0]);
+                    guidance.handleResult(result, error, childStrings);
 
                     // logging starts
                     // Variable 'result' is accessed from within inner class, needs to be final or effectively final
@@ -329,15 +329,16 @@ public class FuzzStatement extends Statement {
                             IntIntHashMap parentCoverage = zest.getCurrentParentInputCoverage();
                             int parentIdx = zest.getCurrentParentInputIdx();
 
+                            String[] parentStrings;
                             // string representations of inputs
                             if (parentArgs == null) {
-                                parentArgs = new String[args[0].length];
-                                Arrays.fill(parentArgs, "");
+                                parentStrings = new String[args[0].length];
+                                Arrays.fill(parentStrings, "");
                             } else {
-                                parentArgs = convertInputToString(parentArgs);
+                                parentStrings = convertInputToString(parentArgs);
                             }
                             // compute the levenshtein distance
-                            List<Integer> mutationDistances = getZestMutationDist(parentArgs, args[0]);
+                            List<Integer> mutationDistances = getZestMutationDist(parentStrings, childStrings);
 
                             // check redundant logs
                             if (prevParents.contains(parentIdx)) {
@@ -350,14 +351,14 @@ public class FuzzStatement extends Statement {
                                 parentCoverageStr.append("s");
                             } else {
                                 covStr.append(coverage);
-                                parentArgsStr.append(Arrays.toString(parentArgs));
+                                parentArgsStr.append(Arrays.toString(parentStrings));
                                 parentCoverageStr.append(parentCoverage);
                             }
 
                             String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s~fz",
                                     parentIdx,
                                     parentArgsStr,
-                                    Arrays.toString(args[0]),
+                                    Arrays.toString(childStrings),
                                     resultStr,
                                     mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
                                     parentCoverageStr,
@@ -498,8 +499,8 @@ public class FuzzStatement extends Statement {
                 // Inform guidance about the outcome of this trial
                 try {
                     // handle the results
-                    args[0] = convertInputToString(args[0]);
-                    guidance.handleResult(result, error, args[0]);
+                    String[] childStrings = convertInputToString(args[0]);
+                    guidance.handleResult(result, error, childStrings);
 
                     // logging starts
                     // Variable 'result' is accessed from within inner class, needs to be final or effectively final
@@ -516,14 +517,15 @@ public class FuzzStatement extends Statement {
                     int parentIdx = ei.getCurrentParentInputIdx();
 
                     // string representations of inputs
+                    String[] parentStrings;
                     if (parentArgs == null) {
-                        parentArgs = new String[args[0].length];
-                        Arrays.fill(parentArgs, "");
+                        parentStrings = new String[args[0].length];
+                        Arrays.fill(parentStrings, "");
                     } else {
-                        parentArgs = convertInputToString(parentArgs);
+                        parentStrings = convertInputToString(parentArgs);
                     }
                     // compute the levenshtein distance
-                    List<Integer> mutationDistances = getZestMutationDist(parentArgs, args[0]);
+                    List<Integer> mutationDistances = getZestMutationDist(parentStrings, childStrings);
 
                     // check redundant logs
                     if (prevParents.contains(parentIdx)) {
@@ -537,12 +539,12 @@ public class FuzzStatement extends Statement {
                         covStr.append(coverage);
                         parentCoverageStr.append(parentCoverage);
                     }
-                    parentArgsStr.append(Arrays.toString(parentArgs));
+                    parentArgsStr.append(Arrays.toString(parentStrings));
 
                     String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s~fz",
                             parentIdx,
                             parentArgsStr,
-                            Arrays.toString(args[0]),
+                            Arrays.toString(childStrings),
                             resultStr,
                             mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
                             parentCoverageStr,
@@ -694,15 +696,24 @@ public class FuzzStatement extends Statement {
     }
 
     /**
-     * @param args Notnull
+     * @param input Notnull
      */
-    private Object[] convertInputToString(Object[] args) {
-        if (args[0] instanceof Document) {
-            return Arrays.stream(args).map(o -> documentToString((Document) o)).toArray();
-        } else if (args[0] instanceof JavaClass) {
-            return Arrays.stream(args).map(o -> javaClassToString((JavaClass) o)).toArray();
+    private String[] convertInputToString(Object[] input) {
+        String[] results = new String[input.length];
+        if (input[0] instanceof Document) {
+            for(int i=0; i<input.length; i++) {
+                results[i] = documentToString((Document) input[i]);
+            }
+        } else if (input[0] instanceof JavaClass) {
+            for(int i=0; i<input.length; i++) {
+                results[i] = javaClassToString((JavaClass) input[i]);
+            }
+        } else {
+            for(int i=0; i<input.length; i++) {
+                results[i] = input[i].toString();
+            }
         }
-        return args;
+        return results;
     }
 
     private String javaClassToString(JavaClass object) {
