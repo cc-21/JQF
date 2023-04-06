@@ -624,11 +624,18 @@ public class ZestGuidance implements Guidance {
     }
 
     public Object[] getCurrentParentInput() {
-        return this.savedInputs.get(this.currentParentInputIdx).value;
+        if(this.currentParentInputIdx<this.savedInputs.size()){
+            return this.savedInputs.get(this.currentParentInputIdx).value;
+        } else{
+            return null;
+        }
     }
 
     public IntIntHashMap getCurrentParentInputCoverage() {
-        ICoverage cov = this.savedInputs.get(this.currentParentInputIdx).totalCoverage;
+        ICoverage cov = null;
+        if(this.currentParentInputIdx<this.savedInputs.size()){
+            cov = this.savedInputs.get(this.currentParentInputIdx).totalCoverage;
+        }
         return cov==null? new IntIntHashMap() : cov.getNonZeroCoverageMap();
     }
 

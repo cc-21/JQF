@@ -41,6 +41,7 @@ import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
 import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
 import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
+import org.apache.bcel.classfile.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
@@ -309,6 +310,7 @@ public class FuzzStatement extends Statement {
                 // Inform guidance about the outcome of this trial
                 try {
                     // handle the results
+                    args[0] = convertInputToString(args[0]);
                     guidance.handleResult(result, error, args[0]);
 
                     // logging starts
@@ -328,7 +330,6 @@ public class FuzzStatement extends Statement {
                             int parentIdx = zest.getCurrentParentInputIdx();
 
                             // string representations of inputs
-                            args[0] = convertInputToString(args[0]);
                             if (parentArgs == null) {
                                 parentArgs = new String[args[0].length];
                                 Arrays.fill(parentArgs, "");
@@ -400,6 +401,7 @@ public class FuzzStatement extends Statement {
         FileHandler handler = new FileHandler("mutation.%g.log", 1000000000, 80, true);
         handler.setFormatter(new SimpleFormatter() {
             private static final String format = "%1$tFT%1$tT,%1$tL%2$s%n";
+
             @Override
             public synchronized String format(LogRecord lr) {
                 return String.format(format,
@@ -496,6 +498,7 @@ public class FuzzStatement extends Statement {
                 // Inform guidance about the outcome of this trial
                 try {
                     // handle the results
+                    args[0] = convertInputToString(args[0]);
                     guidance.handleResult(result, error, args[0]);
 
                     // logging starts
@@ -513,7 +516,6 @@ public class FuzzStatement extends Statement {
                     int parentIdx = ei.getCurrentParentInputIdx();
 
                     // string representations of inputs
-                    args[0] = convertInputToString(args[0]);
                     if (parentArgs == null) {
                         parentArgs = new String[args[0].length];
                         Arrays.fill(parentArgs, "");
@@ -697,8 +699,159 @@ public class FuzzStatement extends Statement {
     private Object[] convertInputToString(Object[] args) {
         if (args[0] instanceof Document) {
             return Arrays.stream(args).map(o -> documentToString((Document) o)).toArray();
+        } else if (args[0] instanceof JavaClass) {
+            return Arrays.stream(args).map(o -> javaClassToString((JavaClass) o)).toArray();
         }
         return args;
+    }
+
+    private String javaClassToString(JavaClass object) {
+        String access = Utility.accessToString(object.getAccessFlags(), true);
+        access = access.isEmpty() ? "" : access + " ";
+        StringBuilder buf = new StringBuilder(128);
+        buf.append(access).append(Utility.classOrInterface(object.getAccessFlags())).append(" ").append(object.getClassName()).append(" extends ").append(Utility.compactClassName(object.getSuperclassName(), false)).append(',');
+        String[] interfaceNames = object.getInterfaceNames();
+        int size = interfaceNames.length;
+        if (size > 0) {
+            buf.append(';');
+            for (int i = 0; i < size; ++i) {
+                buf.append(interfaceNames[i]);
+                if (i < size - 1) {
+                    buf.append(", ");
+                }
+            }
+            buf.append(';');
+        }
+        buf.append(object.getFileName()).append(';');
+        buf.append(object.getSourceFileName()).append(';');
+        buf.append(object.getMajor()).append(".").append(object.getMinor()).append(';');
+        buf.append(object.getAccessFlags()).append(';');
+        buf.append(object.getConstantPool().getLength()).append(";");
+        buf.append(object.isSuper()).append(";");
+
+        int var6;
+        Attribute[] attributes = object.getAttributes();
+        if (attributes.length > 0) {
+            Attribute[] var9 = attributes;
+            int var5 = var9.length;
+            for (var6 = 0; var6 < var5; ++var6) {
+                Attribute attribute = var9[var6];
+                buf.append(attribute + " ");
+            }
+        }
+
+        AnnotationEntry[] annotations = object.getAnnotationEntries();
+        int var14;
+        if (annotations != null && annotations.length > 0) {
+            buf.append(";");
+            AnnotationEntry[] var11 = annotations;
+            var6 = annotations.length;
+            for (var14 = 0; var14 < var6; ++var14) {
+                AnnotationEntry annotation = var11[var14];
+                buf.append(annotation + " ");
+            }
+        }
+
+        Field[] fields = object.getFields();
+        if (fields.length > 0) {
+            buf.append(";").append(fields.length);
+            Field[] var12 = fields;
+            var6 = var12.length;
+
+            for (var14 = 0; var14 < var6; ++var14) {
+                Field field = var12[var14];
+                buf.append(field).append(',');
+            }
+        }
+
+        Method[] methods = object.getMethods();
+        if (methods.length > 0) {
+            buf.append(";").append(methods.length).append(",");
+            Method[] var13 = methods;
+            var6 = var13.length;
+
+            for (var14 = 0; var14 < var6; ++var14) {
+                Method method = var13[var14];
+                buf.append(method).append(',');
+            }
+        }
+        return buf.toString();
+    }
+
+    private String javaClassToStringOriginal(JavaClass object) {
+        String access = Utility.accessToString(object.getAccessFlags(), true);
+        access = access.isEmpty() ? "" : access + " ";
+        StringBuilder buf = new StringBuilder(128);
+        buf.append(access).append(Utility.classOrInterface(object.getAccessFlags())).append(" ").append(object.getClassName()).append(" extends ").append(Utility.compactClassName(object.getSuperclassName(), false)).append('\n');
+        String[] interfaceNames = object.getInterfaceNames();
+        int size = interfaceNames.length;
+        if (size > 0) {
+            buf.append("implements\t\t");
+
+            for (int i = 0; i < size; ++i) {
+                buf.append(interfaceNames[i]);
+                if (i < size - 1) {
+                    buf.append(", ");
+                }
+            }
+            buf.append('\n');
+        }
+        buf.append("filename\t\t").append(object.getFileName()).append('\n');
+        buf.append("compiled from\t\t").append(object.getSourceFileName()).append('\n');
+        buf.append("compiler version\t").append(object.getMajor()).append(".").append(object.getMinor()).append('\n');
+        buf.append("access flags\t\t").append(object.getAccessFlags()).append('\n');
+        buf.append("constant pool\t\t").append(object.getConstantPool().getLength()).append(" entries\n");
+        buf.append("ACC_SUPER flag\t\t").append(object.isSuper()).append("\n");
+        int var6;
+        Attribute[] attributes = object.getAttributes();
+        if (attributes.length > 0) {
+            buf.append("\nAttribute(s):\n");
+            Attribute[] var9 = attributes;
+            int var5 = var9.length;
+
+            for (var6 = 0; var6 < var5; ++var6) {
+                Attribute attribute = var9[var6];
+                buf.append(attribute + " ");
+            }
+        }
+
+        AnnotationEntry[] annotations = object.getAnnotationEntries();
+        int var14;
+        if (annotations != null && annotations.length > 0) {
+            buf.append("\nAnnotation(s):\n");
+            AnnotationEntry[] var11 = annotations;
+            var6 = annotations.length;
+
+            for (var14 = 0; var14 < var6; ++var14) {
+                AnnotationEntry annotation = var11[var14];
+                buf.append(annotation + " ");
+            }
+        }
+
+        Field[] fields = object.getFields();
+        if (fields.length > 0) {
+            buf.append("\n").append(fields.length).append(" fields:\n");
+            Field[] var12 = fields;
+            var6 = var12.length;
+
+            for (var14 = 0; var14 < var6; ++var14) {
+                Field field = var12[var14];
+                buf.append("\t").append(field).append('\n');
+            }
+        }
+
+        Method[] methods = object.getMethods();
+        if (methods.length > 0) {
+            buf.append("\n").append(methods.length).append(" methods:\n");
+            Method[] var13 = methods;
+            var6 = var13.length;
+
+            for (var14 = 0; var14 < var6; ++var14) {
+                Method method = var13[var14];
+                buf.append("\t").append(method).append('\n');
+            }
+        }
+        return buf.toString();
     }
 
     /**
