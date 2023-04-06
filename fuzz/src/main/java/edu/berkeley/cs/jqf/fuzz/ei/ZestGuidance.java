@@ -604,23 +604,39 @@ public class ZestGuidance implements Guidance {
      *
      * @return an InputStream that delivers parameters to the generators
      */
-    protected InputStream createParameterStream() {
+    protected InputStream createParameterStream(Input input) {
         // Return an input stream that reads bytes from a linear array
         return new InputStream() {
             int bytesRead = 0;
 
             @Override
             public int read() throws IOException {
-                assert currentInput instanceof LinearInput : "ZestGuidance should only mutate LinearInput(s)";
+                assert input instanceof LinearInput : "ZestGuidance should only mutate LinearInput(s)";
 
                 // For linear inputs, get with key = bytesRead (which is then incremented)
-                LinearInput linearInput = (LinearInput) currentInput;
+                LinearInput linearInput = (LinearInput) input;
                 // Attempt to get a value from the list, or else generate a random value
                 int ret = linearInput.getOrGenerateFresh(bytesRead++, random);
                 // infoLog("read(%d) = %d", bytesRead, ret);
                 return ret;
             }
         };
+    }
+
+    public Object[] getCurrentParentInput() {
+        if(this.currentParentInputIdx<this.savedInputs.size()){
+            return this.savedInputs.get(this.currentParentInputIdx).value;
+        } else{
+            return null;
+        }
+    }
+
+    public IntIntHashMap getCurrentParentInputCoverage() {
+        ICoverage cov = null;
+        if(this.currentParentInputIdx<this.savedInputs.size()){
+            cov = this.savedInputs.get(this.currentParentInputIdx).totalCoverage;
+        }
+        return cov==null? new IntIntHashMap() : cov.getNonZeroCoverageMap();
     }
 
     @Override
@@ -665,10 +681,10 @@ public class ZestGuidance implements Guidance {
                 Input parent = savedInputs.get(currentParentInputIdx);
 
                 // Fuzz it to get a new input
-                // infoLog("Mutating input: %s", parent.desc);
+                infoLog("Mutating input: %s", parent.desc);
                 currentInput = parent.fuzz(random);
                 numChildrenGeneratedForCurrentParentInput++;
-
+                infoLog("Mutated input: %s", currentInput.desc);
                 // Write it to disk for debugging
                 try {
                     writeCurrentInputToFile(currentInputFile);
@@ -680,8 +696,7 @@ public class ZestGuidance implements Guidance {
                 this.branchCount = 0;
             }
         });
-
-        return createParameterStream();
+        return createParameterStream(this.currentInput);
     }
 
     @Override
@@ -702,7 +717,7 @@ public class ZestGuidance implements Guidance {
     }
 
     @Override
-    public void handleResult(Result result, Throwable error) throws GuidanceException {
+    public void handleResult(Result result, Throwable error, Object[] inputValue) throws GuidanceException {
         conditionallySynchronize(multiThreaded, () -> {
             // Stop timeout handling
             this.runStart = null;
@@ -711,6 +726,10 @@ public class ZestGuidance implements Guidance {
             this.numTrials++;
 
             boolean valid = result == Result.SUCCESS;
+
+            // save bookkeeping data
+            currentInput.value = inputValue;
+            currentInput.totalCoverage = totalCoverage.copy();
 
             if (valid) {
                 // Increment valid counter
@@ -754,12 +773,13 @@ public class ZestGuidance implements Guidance {
 
                     // Save input to queue and to disk
                     final String reason = why;
-                    GuidanceException.wrap(() -> saveCurrentInput(responsibilities, reason));
+                    GuidanceException.wrap(() -> saveCurrentInput(responsibilities, reason, inputValue));
 
                     // Update coverage information
                     updateCoverageFile();
                 }
-            } else if (result == Result.FAILURE || result == Result.TIMEOUT) {
+            }
+            else if (result == Result.FAILURE || result == Result.TIMEOUT) {
                 String msg = error.getMessage();
 
                 // Get the root cause of the failure
@@ -812,6 +832,7 @@ public class ZestGuidance implements Guidance {
                 GuidanceException.wrap(() -> writeCurrentInputToFile(saveFile));
             }
         });
+
     }
 
     // Return a list of saving criteria that have been satisfied for a non-failure input
@@ -929,8 +950,7 @@ public class ZestGuidance implements Guidance {
     }
 
     /* Saves an interesting input to the queue. */
-    protected void saveCurrentInput(IntHashSet responsibilities, String why) throws IOException {
-
+    protected void saveCurrentInput(IntHashSet responsibilities, String why, Object[] inputValue) throws IOException {
         // First, save to disk (note: we issue IDs to everyone, but only write to disk  if valid)
         int newInputIdx = numSavedInputs++;
         String saveFileName = String.format("id_%06d", newInputIdx);
@@ -1054,6 +1074,9 @@ public class ZestGuidance implements Guidance {
      * A candidate or saved test input that maps objects of type K to bytes.
      */
     public static abstract class Input<K> implements Iterable<Integer> {
+        ICoverage totalCoverage = null;
+
+        Object[] value = null;
 
         /**
          * The file where this input is saved.
@@ -1335,4 +1358,7 @@ public class ZestGuidance implements Guidance {
     public IntIntHashMap getCoverageMap() {
         return totalCoverage.getNonZeroCoverageMap();
     }
+
+    public int getCurrentParentInputIdx() { return this.currentParentInputIdx; }
+
 }

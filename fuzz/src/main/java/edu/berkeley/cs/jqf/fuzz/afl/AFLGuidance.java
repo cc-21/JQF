@@ -34,7 +34,6 @@ import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
 import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
 import edu.berkeley.cs.jqf.fuzz.util.Hashing;
-import edu.berkeley.cs.jqf.fuzz.util.IOUtils;
 import edu.berkeley.cs.jqf.instrument.tracing.events.BranchEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.CallEvent;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
@@ -239,42 +238,8 @@ public class AFLGuidance implements Guidance {
      * @param error     the exception thrown by the test, or <code>null</code>
      */
 
-    private void prepareOutputDirectory() throws IOException {
-        File outputDirectory = new File("mutation-data");
-        IOUtils.createDirectory(outputDirectory);
-        this.logFile = new File(outputDirectory, "mutation.log");
-        logFile.delete();
-        infoLog("input; parent_input; exe_status; mutation_distance; coverage; parent_coverage");
-    }
-
-    /* Writes a line of text to a given log file. */
-    private void appendLineToFile(File file, String line) throws GuidanceException {
-        try {
-            FileWriter fw = new FileWriter(file, true);
-            PrintWriter pw = new PrintWriter(fw);
-            PrintWriter out = pw;
-            out.println(line);
-            out.close();
-            pw.close();
-            fw.close();
-        } catch (IOException e) {
-            throw new GuidanceException(e);
-        }
-    }
-
-    /* Writes a line of text to the log file. */
-    private void infoLog(String str, Object... args) {
-        if (true) {
-            String line = String.format(str, args);
-            if (logFile != null) {
-                appendLineToFile(logFile, line);
-            } else {
-                System.err.println(line);
-            }
-        }
-    }
     @Override
-    public void handleResult(Result result, Throwable error) {
+    public void handleResult(Result result, Throwable error, Object[] inputValue) {
         // Stop timeout handling
         this.runStart = null;
 

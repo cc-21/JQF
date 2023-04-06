@@ -28,16 +28,16 @@
  */
 package edu.berkeley.cs.jqf.fuzz.random;
 
-import java.io.InputStream;
-import java.io.PrintStream;
-import java.util.Random;
-import java.util.function.Consumer;
-
 import edu.berkeley.cs.jqf.fuzz.guidance.Guidance;
 import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
 import edu.berkeley.cs.jqf.fuzz.util.Coverage;
 import edu.berkeley.cs.jqf.instrument.tracing.events.TraceEvent;
+
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.util.Random;
+import java.util.function.Consumer;
 
 /**
  * A front-end that only generates random inputs.
@@ -99,7 +99,7 @@ public class NoGuidance implements Guidance {
      * @param error    the error thrown during the trial, or <code>null</code>
      */
     @Override
-    public void handleResult(Result result, Throwable error) {
+    public void handleResult(Result result, Throwable error, Object[] inputValue) {
         numTrials++;
 
         // Display error stack trace in case of failure

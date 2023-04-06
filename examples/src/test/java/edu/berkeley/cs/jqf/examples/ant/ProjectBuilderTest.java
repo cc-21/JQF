@@ -72,7 +72,6 @@ public class ProjectBuilderTest {
         } catch (IOException e) {
             throw new RuntimeException(e);
         } catch (BuildException e) {
-            System.out.println(e.getLocalizedMessage());
             if(e.getMessage().matches("(?i).*XML document structures.*")) {
                 throw new SyntaxException(e);
             } else {

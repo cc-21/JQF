@@ -28,22 +28,6 @@
  */
 package edu.berkeley.cs.jqf.fuzz.ei;
 
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-
 import edu.berkeley.cs.jqf.fuzz.ei.ExecutionIndex.Prefix;
 import edu.berkeley.cs.jqf.fuzz.ei.ExecutionIndex.Suffix;
 import edu.berkeley.cs.jqf.fuzz.ei.state.AbstractExecutionIndexingState;
@@ -51,7 +35,6 @@ import edu.berkeley.cs.jqf.fuzz.ei.state.FastExecutionIndexingState;
 import edu.berkeley.cs.jqf.fuzz.ei.state.JanalaExecutionIndexingState;
 import edu.berkeley.cs.jqf.fuzz.guidance.GuidanceException;
 import edu.berkeley.cs.jqf.fuzz.guidance.Result;
-import edu.berkeley.cs.jqf.fuzz.junit.quickcheck.FuzzStatement;
 import edu.berkeley.cs.jqf.fuzz.util.CoverageFactory;
 import edu.berkeley.cs.jqf.fuzz.util.ProducerHashMap;
 import edu.berkeley.cs.jqf.instrument.tracing.FastCoverageSnoop;
@@ -63,6 +46,12 @@ import org.eclipse.collections.api.iterator.IntIterator;
 import org.eclipse.collections.impl.set.mutable.primitive.IntHashSet;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.TestClass;
+
+import java.io.*;
+import java.time.Duration;
+import java.util.*;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * A guidance that represents inputs as maps from
@@ -188,7 +177,7 @@ public class ExecutionIndexingGuidance extends ZestGuidance {
      * to mutate.
      */
     @Override
-    protected InputStream createParameterStream() {
+    protected InputStream createParameterStream(Input input) {
         // Return an input stream that uses the EI map
         return new InputStream() {
             @Override
@@ -199,9 +188,9 @@ public class ExecutionIndexingGuidance extends ZestGuidance {
                     throw new GuidanceException("Could not compute execution index; no instrumentation?");
                 }
 
-                assert currentInput instanceof MappedInput : "This guidance should only mutate MappedInput(s)";
+                assert input instanceof MappedInput : "This guidance should only mutate MappedInput(s)";
 
-                MappedInput mappedInput = (MappedInput) currentInput;
+                MappedInput mappedInput = (MappedInput) input;
 
                 // Get the execution index of the last event
                 ExecutionIndex executionIndex = eiState.getExecutionIndex(eiState.getLastEventIid());
@@ -245,9 +234,9 @@ public class ExecutionIndexingGuidance extends ZestGuidance {
      * incorporates some custom logic to support minimization
      */
     @Override
-    public void handleResult(Result result, Throwable error) throws GuidanceException {
+    public void handleResult(Result result, Throwable error, Object[] inputValue) throws GuidanceException {
         int numSavedInputsBefore = savedInputs.size();
-        super.handleResult(result, error);
+        super.handleResult(result, error, inputValue);
 
         // Was this a good input?
         if (result == Result.SUCCESS) {
@@ -316,9 +305,9 @@ public class ExecutionIndexingGuidance extends ZestGuidance {
 
     /** Saves an interesting input to the queue. */
     @Override
-    protected void saveCurrentInput(IntHashSet responsibilities, String why) throws IOException {
+    protected void saveCurrentInput(IntHashSet responsibilities, String why, Object[] inputValue) throws IOException {
         // First, do same as Zest
-        super.saveCurrentInput(responsibilities, why);
+        super.saveCurrentInput(responsibilities, why, inputValue);
 
         // Then, map executions to input locations for splicing
         mapEcToInputLoc(currentInput);
