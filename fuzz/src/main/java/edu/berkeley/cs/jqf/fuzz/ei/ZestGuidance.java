@@ -61,196 +61,305 @@ import static java.lang.Math.log;
  */
 public class ZestGuidance implements Guidance {
 
-    /** A pseudo-random number generator for generating fresh values. */
+    /**
+     * A pseudo-random number generator for generating fresh values.
+     */
     protected Random random;
 
-    /** The name of the test for display purposes. */
+    /**
+     * The name of the test for display purposes.
+     */
     protected final String testName;
 
     // ------------ ALGORITHM BOOKKEEPING ------------
 
-    /** The max amount of time to run for, in milli-seconds */
+    /**
+     * The max amount of time to run for, in milli-seconds
+     */
     protected final long maxDurationMillis;
 
-    /** The max number of trials to run */
+    /**
+     * The max number of trials to run
+     */
     protected final long maxTrials;
 
-    /** The number of trials completed. */
+    /**
+     * The number of trials completed.
+     */
     protected long numTrials = 0;
 
-    /** The number of valid inputs. */
+    /**
+     * The number of valid inputs.
+     */
     protected long numValid = 0;
 
-    /** The directory where fuzzing results are produced. */
+    /**
+     * The directory where fuzzing results are produced.
+     */
     protected final File outputDirectory;
 
-    /** The directory where interesting inputs are saved. */
+    /**
+     * The directory where interesting inputs are saved.
+     */
     protected File savedCorpusDirectory;
 
-    /** The directory where saved inputs are saved. */
+    /**
+     * The directory where saved inputs are saved.
+     */
     protected File savedFailuresDirectory;
 
-    /** The directory where all generated inputs are logged in sub-directories (if enabled). */
+    /**
+     * The directory where all generated inputs are logged in sub-directories (if enabled).
+     */
     protected File allInputsDirectory;
 
-    /** Set of saved inputs to fuzz. */
+    /**
+     * Set of saved inputs to fuzz.
+     */
     protected ArrayList<Input> savedInputs = new ArrayList<>();
 
-    /** Queue of seeds to fuzz. */
+    /**
+     * Queue of seeds to fuzz.
+     */
     protected Deque<Input> seedInputs = new ArrayDeque<>();
 
-    /** Current input that's running -- valid after getInput() and before handleResult(). */
+    /**
+     * Current input that's running -- valid after getInput() and before handleResult().
+     */
     protected Input<?> currentInput;
 
-    /** Index of currentInput in the savedInputs -- valid after seeds are processed (OK if this is inaccurate). */
+    /**
+     * Index of currentInput in the savedInputs -- valid after seeds are processed (OK if this is inaccurate).
+     */
     protected int currentParentInputIdx = 0;
 
-    /** Number of mutated inputs generated from currentInput. */
+    /**
+     * Number of mutated inputs generated from currentInput.
+     */
     protected int numChildrenGeneratedForCurrentParentInput = 0;
 
-    /** Number of cycles completed (i.e. how many times we've reset currentParentInputIdx to 0. */
+    /**
+     * Number of cycles completed (i.e. how many times we've reset currentParentInputIdx to 0.
+     */
     protected int cyclesCompleted = 0;
 
-    /** Number of favored inputs in the last cycle. */
+    /**
+     * Number of favored inputs in the last cycle.
+     */
     protected int numFavoredLastCycle = 0;
 
-    /** Blind fuzzing -- if true then the queue is always empty. */
+    /**
+     * Blind fuzzing -- if true then the queue is always empty.
+     */
     protected boolean blind;
 
-    /** Validity fuzzing -- if true then save valid inputs that increase valid coverage */
+    /**
+     * Validity fuzzing -- if true then save valid inputs that increase valid coverage
+     */
     protected boolean validityFuzzing;
 
-    /** Number of saved inputs.
-     *
+    /**
+     * Number of saved inputs.
+     * <p>
      * This is usually the same as savedInputs.size(),
      * but we do not really save inputs in TOTALLY_RANDOM mode.
      */
     protected int numSavedInputs = 0;
 
-    /** Coverage statistics for a single run. */
+    /**
+     * Coverage statistics for a single run.
+     */
     protected ICoverage runCoverage = CoverageFactory.newInstance();
 
-    /** Cumulative coverage statistics. */
+    /**
+     * Cumulative coverage statistics.
+     */
     protected ICoverage totalCoverage = CoverageFactory.newInstance();
 
-    /** Cumulative coverage for valid inputs. */
+    /**
+     * Cumulative coverage for valid inputs.
+     */
     protected ICoverage validCoverage = CoverageFactory.newInstance();
 
-    /** The maximum number of keys covered by any single input found so far. */
+    /**
+     * The maximum number of keys covered by any single input found so far.
+     */
     protected int maxCoverage = 0;
 
-    /** A mapping of coverage keys to inputs that are responsible for them. */
+    /**
+     * A mapping of coverage keys to inputs that are responsible for them.
+     */
     protected Map<Object, Input> responsibleInputs = new HashMap<>(totalCoverage.size());
 
-    /** The set of unique failures found so far. */
+    /**
+     * The set of unique failures found so far.
+     */
     protected Set<String> uniqueFailures = new HashSet<>();
 
-    /** save crash to specific location (should be used with EXIT_ON_CRASH) **/
+    /**
+     * save crash to specific location (should be used with EXIT_ON_CRASH)
+     **/
     protected final String EXACT_CRASH_PATH = System.getProperty("jqf.ei.EXACT_CRASH_PATH");
 
     // ---------- LOGGING / STATS OUTPUT ------------
 
-    /** Whether to print log statements to stderr (debug option; manually edit). */
+    /**
+     * Whether to print log statements to stderr (debug option; manually edit).
+     */
     protected final boolean verbose = true;
 
-    /** A system console, which is non-null only if STDOUT is a console. */
+    /**
+     * A system console, which is non-null only if STDOUT is a console.
+     */
     protected final Console console = System.console();
 
-    /** Time since this guidance instance was created. */
+    /**
+     * Time since this guidance instance was created.
+     */
     protected final Date startTime = new Date();
 
-    /** Time at last stats refresh. */
+    /**
+     * Time at last stats refresh.
+     */
     protected Date lastRefreshTime = startTime;
 
-    /** Total execs at last stats refresh. */
+    /**
+     * Total execs at last stats refresh.
+     */
     protected long lastNumTrials = 0;
 
-    /** Minimum amount of time (in millis) between two stats refreshes. */
+    /**
+     * Minimum amount of time (in millis) between two stats refreshes.
+     */
     protected final long STATS_REFRESH_TIME_PERIOD = 300;
 
-    /** The file where log data is written. */
+    /**
+     * The file where log data is written.
+     */
     protected File logFile;
 
-    /** The file where saved plot data is written. */
+    /**
+     * The file where saved plot data is written.
+     */
     protected File statsFile;
 
-    /** The currently executing input (for debugging purposes). */
+    /**
+     * The currently executing input (for debugging purposes).
+     */
     protected File currentInputFile;
 
-    /** The file contianing the coverage information */ 
+    /**
+     * The file contianing the coverage information
+     */
     protected File coverageFile;
 
-    /** Use libFuzzer like output instead of AFL like stats screen (https://llvm.org/docs/LibFuzzer.html#output) **/
+    /**
+     * Use libFuzzer like output instead of AFL like stats screen (https://llvm.org/docs/LibFuzzer.html#output)
+     **/
     protected final boolean LIBFUZZER_COMPAT_OUTPUT = Boolean.getBoolean("jqf.ei.LIBFUZZER_COMPAT_OUTPUT");
 
-    /** Whether to hide fuzzing statistics **/
+    /**
+     * Whether to hide fuzzing statistics
+     **/
     protected final boolean QUIET_MODE = Boolean.getBoolean("jqf.ei.QUIET_MODE");
 
-    /** Whether to store all generated inputs to disk (can get slowww!) */
+    /**
+     * Whether to store all generated inputs to disk (can get slowww!)
+     */
     protected final boolean LOG_ALL_INPUTS = Boolean.getBoolean("jqf.ei.LOG_ALL_INPUTS");
 
     // ------------- TIMEOUT HANDLING ------------
 
-    /** Timeout for an individual run. */
+    /**
+     * Timeout for an individual run.
+     */
     protected long singleRunTimeoutMillis;
 
-    /** Date when last run was started. */
+    /**
+     * Date when last run was started.
+     */
     protected Date runStart;
 
-    /** Number of conditional jumps since last run was started. */
+    /**
+     * Number of conditional jumps since last run was started.
+     */
     protected long branchCount;
 
-    /** Whether to stop/exit once a crash is found. **/
+    /**
+     * Whether to stop/exit once a crash is found.
+     **/
     protected final boolean EXIT_ON_CRASH = Boolean.getBoolean("jqf.ei.EXIT_ON_CRASH");
 
     // ------------- THREAD HANDLING ------------
 
-    /** The first thread in the application, which usually runs the test method. */
+    /**
+     * The first thread in the application, which usually runs the test method.
+     */
     protected Thread firstThread;
 
-    /** Whether the application has more than one thread running coverage-instrumented code */
+    /**
+     * Whether the application has more than one thread running coverage-instrumented code
+     */
     protected boolean multiThreaded = false;
 
     // ------------- FUZZING HEURISTICS ------------
 
-    /** Whether to save only valid inputs **/
+    /**
+     * Whether to save only valid inputs
+     **/
     protected final boolean SAVE_ONLY_VALID = Boolean.getBoolean("jqf.ei.SAVE_ONLY_VALID");
 
-    /** Max input size to generate. */
+    /**
+     * Max input size to generate.
+     */
     protected final int MAX_INPUT_SIZE = Integer.getInteger("jqf.ei.MAX_INPUT_SIZE", 10240);
 
-    /** Whether to generate EOFs when we run out of bytes in the input, instead of randomly generating new bytes. **/
+    /**
+     * Whether to generate EOFs when we run out of bytes in the input, instead of randomly generating new bytes.
+     **/
     protected final boolean GENERATE_EOF_WHEN_OUT = Boolean.getBoolean("jqf.ei.GENERATE_EOF_WHEN_OUT");
 
-    /** Baseline number of mutated children to produce from a given parent input. */
+    /**
+     * Baseline number of mutated children to produce from a given parent input.
+     */
     protected final int NUM_CHILDREN_BASELINE = 50;
 
-    /** Multiplication factor for number of children to produce for favored inputs. */
+    /**
+     * Multiplication factor for number of children to produce for favored inputs.
+     */
     protected final int NUM_CHILDREN_MULTIPLIER_FAVORED = 20;
 
-    /** Mean number of mutations to perform in each round. */
+    /**
+     * Mean number of mutations to perform in each round.
+     */
     protected final double MEAN_MUTATION_COUNT = 8.0;
 
-    /** Mean number of contiguous bytes to mutate in each mutation. */
+    /**
+     * Mean number of contiguous bytes to mutate in each mutation.
+     */
     protected final double MEAN_MUTATION_SIZE = 4.0; // Bytes
 
-    /** Whether to save inputs that only add new coverage bits (but no new responsibilities). */
+    /**
+     * Whether to save inputs that only add new coverage bits (but no new responsibilities).
+     */
     protected final boolean DISABLE_SAVE_NEW_COUNTS = Boolean.getBoolean("jqf.ei.DISABLE_SAVE_NEW_COUNTS");
 
-    /** Whether to steal responsibility from old inputs (this increases computation cost). */
+    /**
+     * Whether to steal responsibility from old inputs (this increases computation cost).
+     */
     protected final boolean STEAL_RESPONSIBILITY = Boolean.getBoolean("jqf.ei.STEAL_RESPONSIBILITY");
 
     /**
      * Creates a new Zest guidance instance with optional duration,
      * optional trial limit, and possibly deterministic PRNG.
      *
-     * @param testName the name of test to display on the status screen
-     * @param duration the amount of time to run fuzzing for, where
-     *                 {@code null} indicates unlimited time.
-     * @param trials   the number of trials for which to run fuzzing, where
-     *                 {@code null} indicates unlimited trials.
-     * @param outputDirectory the directory where fuzzing results will be written
-     * @param sourceOfRandomness      a pseudo-random number generator
+     * @param testName           the name of test to display on the status screen
+     * @param duration           the amount of time to run fuzzing for, where
+     *                           {@code null} indicates unlimited time.
+     * @param trials             the number of trials for which to run fuzzing, where
+     *                           {@code null} indicates unlimited trials.
+     * @param outputDirectory    the directory where fuzzing results will be written
+     * @param sourceOfRandomness a pseudo-random number generator
      * @throws IOException if the output directory could not be prepared
      */
     public ZestGuidance(String testName, Duration duration, Long trials, File outputDirectory, Random sourceOfRandomness) throws IOException {
@@ -263,7 +372,7 @@ public class ZestGuidance implements Guidance {
         this.validityFuzzing = !Boolean.getBoolean("jqf.ei.DISABLE_VALIDITY_FUZZING");
         prepareOutputDirectory();
 
-        if(this.runCoverage instanceof FastCoverageListener){
+        if (this.runCoverage instanceof FastCoverageListener) {
             FastCoverageSnoop.setFastCoverageListener((FastCoverageListener) this.runCoverage);
         }
 
@@ -283,14 +392,14 @@ public class ZestGuidance implements Guidance {
      * Creates a new Zest guidance instance with seed input files and optional
      * duration, optional trial limit, an possibly deterministic PRNG.
      *
-     * @param testName the name of test to display on the status screen
-     * @param duration the amount of time to run fuzzing for, where
-     *                 {@code null} indicates unlimited time.
-     * @param trials   the number of trials for which to run fuzzing, where
-     *                 {@code null} indicates unlimited trials.
-     * @param outputDirectory the directory where fuzzing results will be written
-     * @param seedInputFiles one or more input files to be used as initial inputs
-     * @param sourceOfRandomness      a pseudo-random number generator
+     * @param testName           the name of test to display on the status screen
+     * @param duration           the amount of time to run fuzzing for, where
+     *                           {@code null} indicates unlimited time.
+     * @param trials             the number of trials for which to run fuzzing, where
+     *                           {@code null} indicates unlimited trials.
+     * @param outputDirectory    the directory where fuzzing results will be written
+     * @param seedInputFiles     one or more input files to be used as initial inputs
+     * @param sourceOfRandomness a pseudo-random number generator
      * @throws IOException if the output directory could not be prepared
      */
     public ZestGuidance(String testName, Duration duration, Long trials, File outputDirectory, File[] seedInputFiles, Random sourceOfRandomness) throws IOException {
@@ -306,14 +415,14 @@ public class ZestGuidance implements Guidance {
      * Creates a new Zest guidance instance with seed input directory and optional
      * duration, optional trial limit, an possibly deterministic PRNG.
      *
-     * @param testName the name of test to display on the status screen
-     * @param duration the amount of time to run fuzzing for, where
-     *                 {@code null} indicates unlimited time.
-     * @param trials   the number of trials for which to run fuzzing, where
-     *                 {@code null} indicates unlimited trials.
-     * @param outputDirectory the directory where fuzzing results will be written
-     * @param seedInputDir the directory containing one or more input files to be used as initial inputs
-     * @param sourceOfRandomness      a pseudo-random number generator
+     * @param testName           the name of test to display on the status screen
+     * @param duration           the amount of time to run fuzzing for, where
+     *                           {@code null} indicates unlimited time.
+     * @param trials             the number of trials for which to run fuzzing, where
+     *                           {@code null} indicates unlimited trials.
+     * @param outputDirectory    the directory where fuzzing results will be written
+     * @param seedInputDir       the directory containing one or more input files to be used as initial inputs
+     * @param sourceOfRandomness a pseudo-random number generator
      * @throws IOException if the output directory could not be prepared
      */
     public ZestGuidance(String testName, Duration duration, Long trials, File outputDirectory, File seedInputDir, Random sourceOfRandomness) throws IOException {
@@ -324,11 +433,11 @@ public class ZestGuidance implements Guidance {
      * Creates a new Zest guidance instance with seed inputs and
      * optional duration.
      *
-     * @param testName the name of test to display on the status screen
-     * @param duration the amount of time to run fuzzing for, where
-     *                 {@code null} indicates unlimited time.
+     * @param testName        the name of test to display on the status screen
+     * @param duration        the amount of time to run fuzzing for, where
+     *                        {@code null} indicates unlimited time.
      * @param outputDirectory the directory where fuzzing results will be written
-     * @param seedInputDir the directory containing one or more input files to be used as initial inputs
+     * @param seedInputDir    the directory containing one or more input files to be used as initial inputs
      * @throws IOException if the output directory could not be prepared
      */
     public ZestGuidance(String testName, Duration duration, File outputDirectory, File seedInputDir) throws IOException {
@@ -339,9 +448,9 @@ public class ZestGuidance implements Guidance {
      * Creates a new Zest guidance instance with seed inputs and
      * optional duration.
      *
-     * @param testName the name of test to display on the status screen
-     * @param duration the amount of time to run fuzzing for, where
-     *                 {@code null} indicates unlimited time.
+     * @param testName        the name of test to display on the status screen
+     * @param duration        the amount of time to run fuzzing for, where
+     *                        {@code null} indicates unlimited time.
      * @param outputDirectory the directory where fuzzing results will be written
      * @throws IOException if the output directory could not be prepared
      */
@@ -353,9 +462,9 @@ public class ZestGuidance implements Guidance {
      * Creates a new Zest guidance instance with seed inputs and
      * optional duration.
      *
-     * @param testName the name of test to display on the status screen
-     * @param duration the amount of time to run fuzzing for, where
-     *                 {@code null} indicates unlimited time.
+     * @param testName        the name of test to display on the status screen
+     * @param duration        the amount of time to run fuzzing for, where
+     *                        {@code null} indicates unlimited time.
      * @param outputDirectory the directory where fuzzing results will be written
      * @throws IOException if the output directory could not be prepared
      */
@@ -400,7 +509,7 @@ public class ZestGuidance implements Guidance {
 
     protected String getStatNames() {
         return "# unix_time, cycles_done, cur_path, paths_total, pending_total, " +
-            "pending_favs, map_size, unique_crashes, unique_hangs, max_depth, execs_per_sec, valid_inputs, invalid_inputs, valid_cov, all_covered_probes, valid_covered_probes";
+                "pending_favs, map_size, unique_crashes, unique_hangs, max_depth, execs_per_sec, valid_inputs, invalid_inputs, valid_cov, all_covered_probes, valid_covered_probes";
     }
 
     /* Writes a line of text to a given log file. */
@@ -492,7 +601,7 @@ public class ZestGuidance implements Guidance {
                 console.printf("Elapsed time:         %s (%s)\n", millisToDuration(elapsedMilliseconds),
                         maxDurationMillis == Long.MAX_VALUE ? "no time limit" : ("max " + millisToDuration(maxDurationMillis)));
                 console.printf("Number of executions: %,d (%s)\n", numTrials,
-                               maxTrials == Long.MAX_VALUE ? "no trial limit" : ("max " + maxTrials));
+                        maxTrials == Long.MAX_VALUE ? "no trial limit" : ("max " + maxTrials));
                 console.printf("Valid inputs:         %,d (%.2f%%)\n", numValid, numValid * 100.0 / numTrials);
                 console.printf("Cycles completed:     %d\n", cyclesCompleted);
                 console.printf("Unique failures:      %,d\n", uniqueFailures.size());
@@ -507,11 +616,13 @@ public class ZestGuidance implements Guidance {
         String plotData = String.format("%d, %d, %d, %d, %d, %d, %.2f%%, %d, %d, %d, %.2f, %d, %d, %.2f%%, %d, %d",
                 TimeUnit.MILLISECONDS.toSeconds(now.getTime()), cyclesCompleted, currentParentInputIdx,
                 numSavedInputs, 0, 0, nonZeroFraction, uniqueFailures.size(), 0, 0, intervalExecsPerSecDouble,
-                numValid, numTrials-numValid, nonZeroValidFraction, nonZeroCount, nonZeroValidCount);
+                numValid, numTrials - numValid, nonZeroValidFraction, nonZeroCount, nonZeroValidCount);
         appendLineToFile(statsFile, plotData);
     }
 
-    /** Updates the data in the coverage file */ 
+    /**
+     * Updates the data in the coverage file
+     */
     protected void updateCoverageFile() {
         try {
             PrintWriter pw = new PrintWriter(coverageFile);
@@ -522,14 +633,14 @@ public class ZestGuidance implements Guidance {
             throw new GuidanceException(ignore);
         }
     }
-    
+
     /* Returns the banner to be displayed on the status screen */
     protected String getTitle() {
         if (blind) {
-            return  "Generator-based random fuzzing (no guidance)\n" +
+            return "Generator-based random fuzzing (no guidance)\n" +
                     "--------------------------------------------\n";
         } else {
-            return  "Semantic Fuzzing with Zest\n" +
+            return "Semantic Fuzzing with Zest\n" +
                     "--------------------------\n";
         }
     }
@@ -555,7 +666,9 @@ public class ZestGuidance implements Guidance {
         return target;
     }
 
-    /** Handles the end of fuzzing cycle (i.e., having gone through the entire queue) */
+    /**
+     * Handles the end of fuzzing cycle (i.e., having gone through the entire queue)
+     */
     protected void completeCycle() {
         // Increment cycle count
         cyclesCompleted++;
@@ -598,7 +711,7 @@ public class ZestGuidance implements Guidance {
 
     /**
      * Returns an InputStream that delivers parameters to the generators.
-     *
+     * <p>
      * Note: The variable `currentInput` has been set to point to the input
      * to mutate.
      *
@@ -624,19 +737,19 @@ public class ZestGuidance implements Guidance {
     }
 
     public Object[] getCurrentParentInput() {
-        if(this.currentParentInputIdx<this.savedInputs.size()){
+        if (this.currentParentInputIdx < this.savedInputs.size()) {
             return this.savedInputs.get(this.currentParentInputIdx).value;
-        } else{
+        } else {
             return null;
         }
     }
 
     public IntIntHashMap getCurrentParentInputCoverage() {
-        ICoverage cov = null;
-        if(this.currentParentInputIdx<this.savedInputs.size()){
-            cov = this.savedInputs.get(this.currentParentInputIdx).totalCoverage;
+        if (this.currentParentInputIdx < this.savedInputs.size()) {
+            return this.savedInputs.get(this.currentParentInputIdx).coverage.getNonZeroCoverageMap();
+        } else {
+            return new IntIntHashMap();
         }
-        return cov==null? new IntIntHashMap() : cov.getNonZeroCoverageMap();
     }
 
     @Override
@@ -707,8 +820,8 @@ public class ZestGuidance implements Guidance {
             // exit
             return false;
         }
-        if(elapsedMilliseconds < maxDurationMillis
-            && numTrials < maxTrials) {
+        if (elapsedMilliseconds < maxDurationMillis
+                && numTrials < maxTrials) {
             return true;
         } else {
             displayStats(true);
@@ -726,10 +839,6 @@ public class ZestGuidance implements Guidance {
             this.numTrials++;
 
             boolean valid = result == Result.SUCCESS;
-
-            // save bookkeeping data
-            currentInput.value = inputValue;
-            currentInput.totalCoverage = totalCoverage.copy();
 
             if (valid) {
                 // Increment valid counter
@@ -778,8 +887,7 @@ public class ZestGuidance implements Guidance {
                     // Update coverage information
                     updateCoverageFile();
                 }
-            }
-            else if (result == Result.FAILURE || result == Result.TIMEOUT) {
+            } else if (result == Result.FAILURE || result == Result.TIMEOUT) {
                 String msg = error.getMessage();
 
                 // Get the root cause of the failure
@@ -920,7 +1028,7 @@ public class ZestGuidance implements Guidance {
 
                     // Check if we can steal all responsibilities from candidate
                     IntIterator iter = responsibilities.intIterator();
-                    while(iter.hasNext()){
+                    while (iter.hasNext()) {
                         int b = iter.next();
                         if (covered.contains(b) == false) {
                             // Cannot steal if this input does not cover something
@@ -967,6 +1075,9 @@ public class ZestGuidance implements Guidance {
         // Second, save to queue
         savedInputs.add(currentInput);
 
+        // save bookkeeping data for logging
+        currentInput.value = inputValue;
+
         // Third, store basic book-keeping data
         currentInput.id = newInputIdx;
         currentInput.saveFile = saveFile;
@@ -978,7 +1089,7 @@ public class ZestGuidance implements Guidance {
         // Fourth, assume responsibility for branches
         currentInput.responsibilities = responsibilities;
         IntIterator iter = responsibilities.intIterator();
-        while(iter.hasNext()){
+        while (iter.hasNext()) {
             int b = iter.next();
             // If there is an old input that is responsible,
             // subsume it
@@ -1007,7 +1118,7 @@ public class ZestGuidance implements Guidance {
 
     /**
      * Handles a trace event generated during test execution.
-     *
+     * <p>
      * Not used by FastNonCollidingCoverage, which does not allocate an
      * instance of TraceEvent at each branch probe execution.
      *
@@ -1030,6 +1141,7 @@ public class ZestGuidance implements Guidance {
 
     /**
      * Returns a reference to the coverage statistics.
+     *
      * @return a reference to the coverage statistics
      */
     public ICoverage getTotalCoverage() {
@@ -1038,7 +1150,7 @@ public class ZestGuidance implements Guidance {
 
     /**
      * Conditionally run a method using synchronization.
-     *
+     * <p>
      * This is used to handle multi-threaded fuzzing.
      */
     protected void conditionallySynchronize(boolean cond, Runnable task) {
@@ -1074,7 +1186,6 @@ public class ZestGuidance implements Guidance {
      * A candidate or saved test input that maps objects of type K to bytes.
      */
     public static abstract class Input<K> implements Iterable<Integer> {
-        ICoverage totalCoverage = null;
 
         Object[] value = null;
 
@@ -1156,8 +1267,11 @@ public class ZestGuidance implements Guidance {
         }
 
         public abstract int getOrGenerateFresh(K key, Random random);
+
         public abstract int size();
+
         public abstract Input fuzz(Random random);
+
         public abstract void gc();
 
         /**
@@ -1174,11 +1288,11 @@ public class ZestGuidance implements Guidance {
 
         /**
          * Sample from a geometric distribution with given mean.
-         *
+         * <p>
          * Utility method used in implementing mutation operations.
          *
          * @param random a pseudo-random number generator
-         * @param mean the mean of the distribution
+         * @param mean   the mean of the distribution
          * @return a randomly sampled value
          */
         public static int sampleGeometric(Random random, double mean) {
@@ -1190,10 +1304,14 @@ public class ZestGuidance implements Guidance {
 
     public class LinearInput extends Input<Integer> {
 
-        /** A list of byte values (0-255) ordered by their index. */
+        /**
+         * A list of byte values (0-255) ordered by their index.
+         */
         protected ArrayList<Integer> values;
 
-        /** The number of bytes requested so far */
+        /**
+         * The number of bytes requested so far
+         */
         protected int requested = 0;
 
         public LinearInput() {
@@ -1272,7 +1390,7 @@ public class ZestGuidance implements Guidance {
 
             // Stack a bunch of mutations
             int numMutations = sampleGeometric(random, MEAN_MUTATION_COUNT);
-            newInput.desc += ",havoc:"+numMutations;
+            newInput.desc += ",havoc:" + numMutations;
 
             boolean setToZero = random.nextDouble() < 0.1; // one out of 10 times
 
@@ -1359,6 +1477,7 @@ public class ZestGuidance implements Guidance {
         return totalCoverage.getNonZeroCoverageMap();
     }
 
-    public int getCurrentParentInputIdx() { return this.currentParentInputIdx; }
-
+    public int getCurrentParentInputIdx() {
+        return this.currentParentInputIdx;
+    }
 }

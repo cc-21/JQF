@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Configuration status="warn" name="MyApp" packages="">
+<Configuration status="warn" name="mutation-project" packages="">
     <Properties>
-        <Property name="LOG_DIR">./mutation-logs</Property>
+        <Property name="LOG_DIR1">./mutation-log</Property>
+        <Property name="LOG_DIR2">./mutation-raw-log</Property>
+        <Property name="LOG_DIR3">./parent-input-log</Property>
     </Properties>
     <Appenders>
         <RollingFile
-                name="rollingFile"
-                fileName="${LOG_DIR}/mutation.log"
-                filePattern="${LOG_DIR}/mutation.%i.log.gz"
+                name="rollingFile1"
+                fileName="${LOG_DIR1}/mutation.log"
+                filePattern="${LOG_DIR1}/mutation.%i.log.gz"
                 ignoreExceptions="false">
             <PatternLayout>
                 <Pattern>%d{ISO8601}%m%n</Pattern>
             </PatternLayout>
             <Policies>
-                <SizeBasedTriggeringPolicy size="1GB" />
+                <SizeBasedTriggeringPolicy size="1GB"/>
             </Policies>
-            <DefaultRolloverStrategy max="80">
+            <DefaultRolloverStrategy max="10">
                 <!-- auto delete policy
                 <Delete basePath="${LOG_DIR}" maxDepth="2">
                     <IfFileName glob="*/app-*.log.gz" />
@@ -24,10 +26,45 @@
                 -->
             </DefaultRolloverStrategy>
         </RollingFile>
+        <RollingFile
+                name="rollingFile2"
+                fileName="${LOG_DIR2}/raw.log"
+                filePattern="${LOG_DIR2}/raw.%i.log.gz"
+                ignoreExceptions="false">
+            <PatternLayout>
+                <Pattern>%m</Pattern>
+            </PatternLayout>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="1GB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="70">
+            </DefaultRolloverStrategy>
+        </RollingFile>
+        <RollingFile
+                name="rollingFile3"
+                fileName="${LOG_DIR3}/parent.log"
+                filePattern="${LOG_DIR3}/parent.%i.log.gz"
+                ignoreExceptions="false">
+            <PatternLayout>
+                <Pattern>%m</Pattern>
+            </PatternLayout>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="1GB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="5">
+            </DefaultRolloverStrategy>
+        </RollingFile>
     </Appenders>
     <Loggers>
-        <Root level="debug">
-            <AppenderRef ref="rollingFile"/>
-        </Root>
+        <Logger name="mutation-logger" level="debug" additivity="false">
+            <AppenderRef ref="rollingFile1"/>
+        </Logger>
+        <Logger name="raw-logger" level="debug" additivity="false">
+            <AppenderRef ref="rollingFile2"/>
+        </Logger>
+        <Logger name="parent-input-logger" level="debug" additivity="false">
+            <AppenderRef ref="rollingFile3"/>
+        </Logger>
+        <Root level="debug"/>
     </Loggers>
 </Configuration>
