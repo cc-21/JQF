@@ -208,7 +208,9 @@ public class FuzzStatement extends Statement {
 
     private void evaluateZest() throws Throwable {
         // log4j logger
-        Logger logger = LogManager.getLogger(FuzzStatement.class);
+        Logger logger1 = LogManager.getLogger("mutation-logger");
+        Logger logger2 = LogManager.getLogger("raw-logger");
+        Logger logger3 = LogManager.getLogger("parent-input-logger");
         int nThreads = Runtime.getRuntime().availableProcessors();
         BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(100);
         ExecutorService executor = new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, workQueue, new RejectedExecutionHandler() {
@@ -233,11 +235,12 @@ public class FuzzStatement extends Statement {
                 .map(generatorRepository::produceGenerator)
                 .collect(Collectors.toList());
 
+        List<Integer> prevParents = new ArrayList<>();
+
         // Keep fuzzing until no more input or I/O error with guidance
         try {
             // input generated
             final Object[][] args = {null};
-            List<Integer> prevParents = new ArrayList<>();
 
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
@@ -340,9 +343,10 @@ public class FuzzStatement extends Statement {
                             // compute the levenshtein distance
                             List<Integer> mutationDistances = getZestMutationDist(parentStrings, childStrings);
 
+                            boolean coverageEquals = coverage.equals(parentCoverage);
                             // check redundant logs
                             if (prevParents.contains(parentIdx)) {
-                                if (coverage.equals(parentCoverage)) {
+                                if (coverageEquals) {
                                     covStr.append("s");
                                 } else {
                                     covStr.append(coverage);
@@ -353,17 +357,21 @@ public class FuzzStatement extends Statement {
                                 covStr.append(coverage);
                                 parentArgsStr.append(Arrays.toString(parentStrings));
                                 parentCoverageStr.append(parentCoverage);
+                                logger3.error(String.format("%d~fz %s~fz %s~fz ",
+                                        parentIdx,
+                                        parentArgsStr,
+                                        parentCoverageStr));
                             }
-
-                            String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s~fz",
+                            logger1.error(String.format("; %d; %s; %s; %s",
                                     parentIdx,
-                                    parentArgsStr,
-                                    Arrays.toString(childStrings),
                                     resultStr,
                                     mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                                    coverageEquals? 0:getCoverageDistance(parentCoverage, coverage)));
+                            logger2.error(String.format("%s~fz %s~fz %s~fz %s~fz ",
+                                    parentArgsStr,
+                                    Arrays.toString(childStrings),
                                     parentCoverageStr,
-                                    covStr);
-                            logger.error(log);
+                                    covStr));
                             // update
                             prevParents.add(parentIdx);
                         }
@@ -377,14 +385,13 @@ public class FuzzStatement extends Statement {
                     throw new GuidanceException(e);
                 }
             }
+            // shut down the executor
+            executor.shutdown();
+            executor.awaitTermination(5, TimeUnit.HOURS);
         } catch (GuidanceException e) {
             System.err.println("Fuzzing stopped due to guidance exception: " + e.getMessage());
             throw e;
         }
-
-        // shut down the executor
-        executor.shutdown();
-        executor.awaitTermination(5, TimeUnit.HOURS);
 
         if (failures.size() > 0) {
             if (failures.size() == 1) {
@@ -398,9 +405,7 @@ public class FuzzStatement extends Statement {
     }
 
     private void evaluateEI() throws Throwable {
-        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(FuzzStatement.class.getName());
-        FileHandler handler = new FileHandler("mutation.%g.log", 1000000000, 80, true);
-        handler.setFormatter(new SimpleFormatter() {
+        SimpleFormatter format1 = new SimpleFormatter() {
             private static final String format = "%1$tFT%1$tT,%1$tL%2$s%n";
 
             @Override
@@ -410,9 +415,34 @@ public class FuzzStatement extends Statement {
                         lr.getMessage()
                 );
             }
-        });
-        logger.setUseParentHandlers(false);
-        logger.addHandler(handler);
+        };
+
+        SimpleFormatter format2 = new SimpleFormatter() {
+            private static final String format = "%1$s";
+
+            @Override
+            public synchronized String format(LogRecord lr) {
+                return String.format(format, lr.getMessage());
+            }
+        };
+
+        java.util.logging.Logger logger1 = java.util.logging.Logger.getLogger("logger1");
+        FileHandler handler1 = new FileHandler("mutation.%g.log", 10000000, 2, true);
+        handler1.setFormatter(format1);
+        logger1.setUseParentHandlers(false);
+        logger1.addHandler(handler1);
+
+        java.util.logging.Logger logger2 = java.util.logging.Logger.getLogger("logger2");
+        FileHandler handler2 = new FileHandler("raw.%g.log", 10000000, 5, true);
+        handler2.setFormatter(format2);
+        logger2.setUseParentHandlers(false);
+        logger2.addHandler(handler2);
+
+        java.util.logging.Logger logger3 = java.util.logging.Logger.getLogger("logger3");
+        FileHandler handler3 = new FileHandler("parent.%g.log", 10000000, 5, true);
+        handler3.setFormatter(format2);
+        logger3.setUseParentHandlers(false);
+        logger3.addHandler(handler3);
 
         ExecutionIndexingGuidance ei = (ExecutionIndexingGuidance) guidance;
 
@@ -426,7 +456,8 @@ public class FuzzStatement extends Statement {
         try {
             // input generated
             final Object[][] args = {null};
-            List<Integer> prevParents = new ArrayList<>();
+            //List<Integer> prevParents = new ArrayList<>();
+            IntIntHashMap prevParents = new IntIntHashMap();
 
             // Keep fuzzing as long as guidance wants to
             while (guidance.hasInput()) {
@@ -527,31 +558,48 @@ public class FuzzStatement extends Statement {
                     // compute the levenshtein distance
                     List<Integer> mutationDistances = getZestMutationDist(parentStrings, childStrings);
 
+                    boolean coverageEquals = coverage.equals(parentCoverage);
+                    String parents = Arrays.toString(parentStrings);
                     // check redundant logs
-                    if (prevParents.contains(parentIdx)) {
-                        if (coverage.equals(parentCoverage)) {
+                    if (prevParents.containsKey(parentIdx)) {
+                        if (coverageEquals) {
                             covStr.append("s");
                         } else {
                             covStr.append(coverage);
                         }
                         parentCoverageStr.append("s");
+                        if(prevParents.get(parentIdx) != parents.length()) {
+                            // input has been minimized
+                            parentArgsStr.append(parents);
+                            // parent index can be duplicate
+                            logger3.log(Level.INFO, String.format("%d~fz %s~fz %s~fz ",
+                                    parentIdx,
+                                    parentArgsStr,
+                                    parentCoverageStr));
+                        } else {
+                            parentArgsStr.append("s");
+                        }
                     } else {
+                        parentArgsStr.append(parents);
                         covStr.append(coverage);
                         parentCoverageStr.append(parentCoverage);
+                        logger3.log(Level.INFO, String.format("%d~fz %s~fz %s~fz ",
+                                parentIdx,
+                                parentArgsStr,
+                                parentCoverageStr));
                     }
-                    parentArgsStr.append(Arrays.toString(parentStrings));
-
-                    String log = String.format("~fz %d~fz %s~fz %s~fz %s~fz %s~fz %s~fz %s~fz",
+                    logger1.log(Level.INFO, String.format("; %d; %s; %s; %s",
                             parentIdx,
-                            parentArgsStr,
-                            Arrays.toString(childStrings),
                             resultStr,
                             mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
+                            coverageEquals? 0:getCoverageDistance(parentCoverage, coverage)));
+                    logger2.log(Level.INFO, String.format("%s~fz %s~fz %s~fz %s~fz ",
+                            parentArgsStr,
+                            Arrays.toString(childStrings),
                             parentCoverageStr,
-                            covStr);
-                    logger.log(Level.INFO, log);
+                            covStr));
                     // update
-                    prevParents.add(parentIdx);
+                    prevParents.put(parentIdx, parents.length());
                 } catch (GuidanceException e) {
                     throw e; // Propagate
                 } catch (Throwable e) {
@@ -573,6 +621,30 @@ public class FuzzStatement extends Statement {
                 throw new MultipleFailureException(failures);
             }
         }
+    }
+
+    public String getCoverageDistance(IntIntHashMap parent, IntIntHashMap child) {
+        int[] results = new int[2];
+        parent.forEachKeyValue((k, v) -> {
+            if(child.containsKey(k)) {
+                results[1] += child.get(k)- v;
+            } else {
+                results[1] -= v;
+                results[0] += 1;
+            }
+        });
+
+        child.forEachKeyValue((k, v) -> {
+            if(!parent.containsKey(k)) {
+                results[1] += v;
+                results[0] += 1;
+            }
+        });
+
+        return String.format("%d; %d; %d",
+                results[0],
+                results[1],
+                (int) parent.values().sum() + child.values().sum());
     }
 
     private void evaluateOthers() throws Throwable {
