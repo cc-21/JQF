@@ -36,8 +36,8 @@ import com.pholser.junit.quickcheck.internal.generator.GeneratorRepository;
 import com.pholser.junit.quickcheck.random.SourceOfRandomness;
 import edu.berkeley.cs.jqf.fuzz.ei.ExecutionIndexingGuidance;
 import edu.berkeley.cs.jqf.fuzz.ei.ZestGuidance;
-import edu.berkeley.cs.jqf.fuzz.guidance.*;
 import edu.berkeley.cs.jqf.fuzz.guidance.TimeoutException;
+import edu.berkeley.cs.jqf.fuzz.guidance.*;
 import edu.berkeley.cs.jqf.fuzz.util.InputStreamAFL;
 import edu.berkeley.cs.jqf.fuzz.util.SyntaxException;
 import edu.berkeley.cs.jqf.instrument.InstrumentationException;
@@ -65,13 +65,8 @@ import java.io.StringWriter;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.logging.FileHandler;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
-import java.util.logging.SimpleFormatter;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -209,7 +204,6 @@ public class FuzzStatement extends Statement {
     private void evaluateZest() throws Throwable {
         // log4j logger
         Logger logger1 = LogManager.getLogger("mutation-logger");
-        Logger logger2 = LogManager.getLogger("raw-logger");
         Logger logger3 = LogManager.getLogger("parent-input-logger");
         int nThreads = Runtime.getRuntime().availableProcessors();
         BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(100);
@@ -366,12 +360,7 @@ public class FuzzStatement extends Statement {
                                     parentIdx,
                                     resultStr,
                                     mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                                    coverageEquals? 0:getCoverageDistance(parentCoverage, coverage)));
-                            logger2.error(String.format("%s~fz %s~fz %s~fz %s~fz ",
-                                    parentArgsStr,
-                                    Arrays.toString(childStrings),
-                                    parentCoverageStr,
-                                    covStr));
+                                    getCoverageInfo(parentCoverage, coverage)));
                             // update
                             prevParents.add(parentIdx);
                         }
@@ -405,47 +394,8 @@ public class FuzzStatement extends Statement {
     }
 
     private void evaluateEI() throws Throwable {
-        SimpleFormatter format1 = new SimpleFormatter() {
-            private static final String format = "%1$tFT%1$tT,%1$tL%2$s%n";
-
-            @Override
-            public synchronized String format(LogRecord lr) {
-                return String.format(format,
-                        new Date(lr.getMillis()),
-                        lr.getMessage()
-                );
-            }
-        };
-
-        SimpleFormatter format2 = new SimpleFormatter() {
-            private static final String format = "%1$s";
-
-            @Override
-            public synchronized String format(LogRecord lr) {
-                return String.format(format, lr.getMessage());
-            }
-        };
-
-        java.util.logging.Logger logger1 = java.util.logging.Logger.getLogger("logger1");
-        FileHandler handler1 = new FileHandler("mutation.%g.log", 10000000, 2, true);
-        handler1.setFormatter(format1);
-        logger1.setUseParentHandlers(false);
-        logger1.addHandler(handler1);
-
-        java.util.logging.Logger logger2 = java.util.logging.Logger.getLogger("logger2");
-        FileHandler handler2 = new FileHandler("raw.%g.log", 10000000, 5, true);
-        handler2.setFormatter(format2);
-        logger2.setUseParentHandlers(false);
-        logger2.addHandler(handler2);
-
-        java.util.logging.Logger logger3 = java.util.logging.Logger.getLogger("logger3");
-        FileHandler handler3 = new FileHandler("parent.%g.log", 10000000, 5, true);
-        handler3.setFormatter(format2);
-        logger3.setUseParentHandlers(false);
-        logger3.addHandler(handler3);
-
+        Logger logger1 = LogManager.getLogger("mutation-logger");
         ExecutionIndexingGuidance ei = (ExecutionIndexingGuidance) guidance;
-
         // Construct generators for each parameter
         List<Generator<?>> generators = Arrays.stream(method.getMethod().getParameters())
                 .map(this::createParameterTypeContext)
@@ -571,11 +521,6 @@ public class FuzzStatement extends Statement {
                         if(prevParents.get(parentIdx) != parents.length()) {
                             // input has been minimized
                             parentArgsStr.append(parents);
-                            // parent index can be duplicate
-                            logger3.log(Level.INFO, String.format("%d~fz %s~fz %s~fz ",
-                                    parentIdx,
-                                    parentArgsStr,
-                                    parentCoverageStr));
                         } else {
                             parentArgsStr.append("s");
                         }
@@ -583,21 +528,12 @@ public class FuzzStatement extends Statement {
                         parentArgsStr.append(parents);
                         covStr.append(coverage);
                         parentCoverageStr.append(parentCoverage);
-                        logger3.log(Level.INFO, String.format("%d~fz %s~fz %s~fz ",
-                                parentIdx,
-                                parentArgsStr,
-                                parentCoverageStr));
                     }
-                    logger1.log(Level.INFO, String.format("; %d; %s; %s; %s",
+                    logger1.error(String.format("; %d; %s; %s; %s",
                             parentIdx,
                             resultStr,
                             mutationDistances.stream().map(o -> o.toString()).collect(Collectors.joining(", ")),
-                            coverageEquals? 0:getCoverageDistance(parentCoverage, coverage)));
-                    logger2.log(Level.INFO, String.format("%s~fz %s~fz %s~fz %s~fz ",
-                            parentArgsStr,
-                            Arrays.toString(childStrings),
-                            parentCoverageStr,
-                            covStr));
+                            getCoverageInfo(parentCoverage, coverage)));
                     // update
                     prevParents.put(parentIdx, parents.length());
                 } catch (GuidanceException e) {
@@ -623,28 +559,14 @@ public class FuzzStatement extends Statement {
         }
     }
 
-    public String getCoverageDistance(IntIntHashMap parent, IntIntHashMap child) {
-        int[] results = new int[2];
-        parent.forEachKeyValue((k, v) -> {
-            if(child.containsKey(k)) {
-                results[1] += child.get(k)- v;
-            } else {
-                results[1] -= v;
-                results[0] += 1;
-            }
-        });
-
-        child.forEachKeyValue((k, v) -> {
-            if(!parent.containsKey(k)) {
-                results[1] += v;
-                results[0] += 1;
-            }
-        });
-
+    public String getCoverageInfo(IntIntHashMap parent, IntIntHashMap child) {
+        int diff_in_num_of_branches = parent.keySet().select(k -> !child.containsKey(k)).size() + child.keySet().select(k -> !parent.containsKey(k)).size();
+        long parent_cov_values = parent.values().sum();
+        long child_cov_values = child.values().sum();
         return String.format("%d; %d; %d",
-                results[0],
-                results[1],
-                (int) parent.values().sum() + child.values().sum());
+                diff_in_num_of_branches,
+                (child_cov_values - parent_cov_values),
+                (parent_cov_values + child_cov_values));
     }
 
     private void evaluateOthers() throws Throwable {
